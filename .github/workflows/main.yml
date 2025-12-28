@@ -1,0 +1,30 @@
+name: Build & Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ] # Pastikan branch utama namanya 'main' atau 'master'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # 1. Install Flutter di Server GitHub
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # 2. Download Library
+      - run: flutter pub get
+
+      # 3. Build Web (Base Href disesuaikan nama repo)
+      # PENTING: Ganti 'NAMA_REPO' di bawah dengan nama repository GitHub nanti!
+      # Contoh: --base-href "/puskeswan-app/"
+      - run: flutter build web --release --base-href "/puskeswan-app/"
+
+      # 4. Deploy ke Branch 'gh-pages'
+      - uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
