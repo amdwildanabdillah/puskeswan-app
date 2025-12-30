@@ -16,6 +16,62 @@ class _LoginScreenState extends State<LoginScreen> {
   // Akses Supabase
   final _supabase = Supabase.instance.client;
 
+  // --- 1. SETUP LISTENER AUTH (Biar pas balik dari Browser otomatis masuk) ---
+  @override
+  void initState() {
+    super.initState();
+    _setupAuthListener();
+  }
+
+  void _setupAuthListener() {
+    _supabase.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+      if (event == AuthChangeEvent.signedIn) {
+        // Kalau user sukses login (termasuk dari Google), cek role & navigasi
+        _navigateToDashboard();
+      }
+    });
+  }
+
+  // Logic Navigasi dipisah biar bisa dipanggil dari Google Auth juga
+  void _navigateToDashboard() {
+    if (!mounted) return;
+
+    final user = _supabase.auth.currentUser;
+    String email = user?.email ?? '';
+
+    String role = 'Dokter Hewan'; // Default
+    if (email.contains('admin')) {
+      role = 'Admin Gudang';
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => DashboardScreen(role: role)),
+    );
+  }
+
+  // --- 2. FUNCTION LOGIN GOOGLE ---
+  Future<void> _loginWithGoogle() async {
+    try {
+      await _supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        // URL ini harus SAMA PERSIS dengan yang didaftarin di Dashboard & AndroidManifest
+        redirectTo: 'io.supabase.flutter://login-callback',
+      );
+      // Gak perlu navigasi manual disini, karena listener di initState yang bakal kerja
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Google Login Error: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -28,26 +84,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      // 1. Coba Login ke Supabase
       await _supabase.auth.signInWithPassword(email: email, password: password);
-
-      // 2. Kalau berhasil, cek emailnya buat nentuin role (Sederhana dulu)
-      // Nanti bisa kita bikin tabel khusus role, tapi ini cara cepatnya:
-      // Misal: kalau emailnya ada kata 'admin', dia jadi admin.
-
-      if (mounted) {
-        String role = 'Dokter Hewan'; // Default
-        if (email.contains('admin')) {
-          role = 'Admin Gudang';
-        }
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => DashboardScreen(role: role)),
-        );
-      }
+      // Navigasi ditangani oleh Auth Listener di initState
     } on AuthException catch (e) {
-      // Kalau password salah / user gak ada
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message), backgroundColor: Colors.red),
@@ -142,6 +181,40 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // --- 3. UI BUTTON GOOGLE ---
+                    const SizedBox(height: 16),
+                    const Row(
+                      children: [
+                        Expanded(child: Divider()),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8),
+                          child: Text("ATAU"),
+                        ),
+                        Expanded(child: Divider()),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: _loginWithGoogle,
+                        icon: const Icon(
+                          Icons.g_mobiledata,
+                          size: 30,
+                          color: Colors.red,
+                        ), // Pura-pura icon Google
+                        label: const Text(
+                          "Masuk dengan Google",
+                          style: TextStyle(color: Colors.black87),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                       ),
