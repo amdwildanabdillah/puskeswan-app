@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart'; // <--- WAJIB: Buat cek kIsWeb
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dashboard_screen.dart';
@@ -16,7 +17,6 @@ class _LoginScreenState extends State<LoginScreen> {
   // Akses Supabase
   final _supabase = Supabase.instance.client;
 
-  // --- 1. SETUP LISTENER AUTH (Biar pas balik dari Browser otomatis masuk) ---
   @override
   void initState() {
     super.initState();
@@ -27,20 +27,18 @@ class _LoginScreenState extends State<LoginScreen> {
     _supabase.auth.onAuthStateChange.listen((data) {
       final event = data.event;
       if (event == AuthChangeEvent.signedIn) {
-        // Kalau user sukses login (termasuk dari Google), cek role & navigasi
         _navigateToDashboard();
       }
     });
   }
 
-  // Logic Navigasi dipisah biar bisa dipanggil dari Google Auth juga
   void _navigateToDashboard() {
     if (!mounted) return;
 
     final user = _supabase.auth.currentUser;
     String email = user?.email ?? '';
 
-    String role = 'Dokter Hewan'; // Default
+    String role = 'Dokter Hewan';
     if (email.contains('admin')) {
       role = 'Admin Gudang';
     }
@@ -51,15 +49,19 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // --- 2. FUNCTION LOGIN GOOGLE ---
+  // --- FUNCTION LOGIN GOOGLE YANG SUDAH DIPERBAIKI ---
   Future<void> _loginWithGoogle() async {
     try {
+      // Cek apakah aplikasi jalan di Web atau HP
+      // GANTI 'https://puskeswan-app.vercel.app/' dengan link Vercel kamu yang asli kalau beda
+      String redirectUrl = kIsWeb
+          ? 'https://puskeswan-app.vercel.app/'
+          : 'io.supabase.flutter://login-callback';
+
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        // URL ini harus SAMA PERSIS dengan yang didaftarin di Dashboard & AndroidManifest
-        redirectTo: 'io.supabase.flutter://login-callback',
+        redirectTo: redirectUrl,
       );
-      // Gak perlu navigasi manual disini, karena listener di initState yang bakal kerja
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -85,7 +87,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await _supabase.auth.signInWithPassword(email: email, password: password);
-      // Navigasi ditangani oleh Auth Listener di initState
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -185,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    // --- 3. UI BUTTON GOOGLE ---
+
                     const SizedBox(height: 16),
                     const Row(
                       children: [
@@ -207,7 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Icons.g_mobiledata,
                           size: 30,
                           color: Colors.red,
-                        ), // Pura-pura icon Google
+                        ),
                         label: const Text(
                           "Masuk dengan Google",
                           style: TextStyle(color: Colors.black87),
