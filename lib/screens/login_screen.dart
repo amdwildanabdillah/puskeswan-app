@@ -1,7 +1,8 @@
-import 'package:flutter/foundation.dart'; // <--- WAJIB: Buat cek kIsWeb
+import 'package:flutter/foundation.dart'; // Buat kIsWeb
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dashboard_screen.dart';
+import 'verification_screen.dart'; // <--- JANGAN LUPA INI (Pastikan file verification_screen.dart sudah dibuat)
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -32,30 +33,72 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  void _navigateToDashboard() {
+  // --- LOGIKA BARU: CEK DATABASE DULU SEBELUM MASUK ---
+  Future<void> _navigateToDashboard() async {
     if (!mounted) return;
 
     final user = _supabase.auth.currentUser;
-    String email = user?.email ?? '';
+    if (user == null) return;
 
-    String role = 'Dokter Hewan';
-    if (email.contains('admin')) {
-      role = 'Admin Gudang';
+    try {
+      // 1. Kasih tau user kalau sistem lagi mikir (biar gak dikira nge-hang)
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Sedang memeriksa status akun..."),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+
+      // 2. AMBIL DATA DARI TABEL PROFILES (YANG ADA STATUS PENDING-NYA)
+      final data = await _supabase
+          .from('profiles')
+          .select('role, full_name')
+          .eq('id', user.id)
+          .maybeSingle(); // Pakai maybeSingle biar gak crash kalau data belum siap
+
+      if (!mounted) return;
+
+      // Kalau data belum ada (misal delay internet), anggap Pending dulu biar aman
+      String role = data?['role'] ?? 'Pending';
+      String nama = data?['full_name'] ?? 'User Baru';
+
+      // 3. CEK DISINI: PENDING ATAU DOKTER?
+      if (role == 'Pending') {
+        // --- A. Kalau Pending -> LEMPAR KE RUANG TUNGGU ---
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => VerificationScreen(nama: nama),
+          ),
+        );
+      } else {
+        // --- B. Kalau Dokter/Admin -> MASUK DASHBOARD ---
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => DashboardScreen(role: role)),
+        );
+      }
+    } catch (e) {
+      // Kalau error koneksi atau lainnya, buang ke VerificationScreen demi keamanan
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const VerificationScreen(nama: "User"),
+          ),
+        );
+      }
     }
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => DashboardScreen(role: role)),
-    );
   }
 
-  // --- FUNCTION LOGIN GOOGLE YANG SUDAH DIPERBAIKI ---
+  // --- FUNCTION LOGIN GOOGLE ---
   Future<void> _loginWithGoogle() async {
     try {
       // Cek apakah aplikasi jalan di Web atau HP
-      // GANTI 'https://puskeswan-app.vercel.app/' dengan link Vercel kamu yang asli kalau beda
       String redirectUrl = kIsWeb
-          ? 'https://puskeswan-app.vercel.app/'
+          ? 'https://puskeswan-app.vercel.app/' // <--- Pastikan link Vercel ini benar
           : 'io.supabase.flutter://login-callback';
 
       await _supabase.auth.signInWithOAuth(
@@ -187,7 +230,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 16),
                     const Row(
                       children: [
