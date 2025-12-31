@@ -131,7 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      "LOGIN AMAN",
+                      "Pusat Kesehatan Hewan",
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -178,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         child: const Text(
-                          "MASUK SISTEM",
+                          "Sign In",
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
