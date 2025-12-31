@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import '../services/database_helper.dart';
 
 // Import Screen Lainnya
 import 'login_screen.dart';
@@ -7,17 +9,99 @@ import 'gudang_screen.dart';
 import 'input_pelayanan.dart';
 import 'invoice_screen.dart';
 import 'data_peternak_screen.dart';
-import 'about_screen.dart'; // <--- Pastikan file about_screen.dart sudah dibuat
+import 'about_screen.dart';
 
-class DashboardScreen extends StatelessWidget {
-  final String role; // 'Admin Gudang' atau 'Dokter Hewan'
-  final String nama; // Nama user yang login
+class DashboardScreen extends StatefulWidget {
+  final String role;
+  final String nama;
 
   const DashboardScreen({super.key, required this.role, required this.nama});
 
-  // Fungsi Logout
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  int _pendingDataCount = 0;
+  bool _isSyncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPendingData();
+  }
+
+  void _refreshDashboard() {
+    _checkPendingData();
+  }
+
+  Future<void> _checkPendingData() async {
+    final count = await DatabaseHelper().countPending();
+    if (mounted) {
+      setState(() {
+        _pendingDataCount = count;
+      });
+    }
+  }
+
+  Future<void> _syncNow() async {
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Masih gak ada sinyal Mas! Cari wifi dulu."),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isSyncing = true);
+
+    try {
+      final db = DatabaseHelper();
+      final pendingList = await db.getTransaksiPending();
+
+      int successCount = 0;
+
+      for (var item in pendingList) {
+        final dataToUpload = Map<String, dynamic>.from(item);
+        dataToUpload.remove('id');
+
+        await Supabase.instance.client.from('pelayanan').insert(dataToUpload);
+
+        await db.deleteTransaksi(item['id']);
+        successCount++;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Sukses! $successCount data berhasil di-upload ke Cloud ☁️",
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      _checkPendingData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Gagal Sync: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
   Future<void> _logout(BuildContext context) async {
-    // Tampilkan konfirmasi dulu biar gak kepencet
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -54,18 +138,17 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.purple[50], // Background ungu muda
+      backgroundColor: Colors.purple[50],
       appBar: AppBar(
         title: const Text(
           "Puskeswan Trenggalek",
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
-        backgroundColor: Colors.purple[800], // Warna Ungu Tua
+        backgroundColor: Colors.purple[800],
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // TOMBOL INFO (ABOUT VIXEL)
           IconButton(
             icon: const Icon(Icons.info_outline),
             tooltip: "Tentang Aplikasi",
@@ -76,8 +159,6 @@ class DashboardScreen extends StatelessWidget {
               );
             },
           ),
-
-          // TOMBOL LOGOUT
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: "Keluar",
@@ -87,7 +168,7 @@ class DashboardScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // HEADER PROFIL (Desain Curve)
+          // HEADER PROFIL
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(24, 10, 24, 30),
@@ -107,12 +188,11 @@ class DashboardScreen extends StatelessWidget {
             ),
             child: Row(
               children: [
-                // Avatar Inisial
                 CircleAvatar(
                   radius: 30,
                   backgroundColor: Colors.white,
                   child: Text(
-                    nama.isNotEmpty ? nama[0].toUpperCase() : "P",
+                    widget.nama.isNotEmpty ? widget.nama[0].toUpperCase() : "P",
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -121,8 +201,6 @@ class DashboardScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 16),
-
-                // Info Nama & Role
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,7 +211,7 @@ class DashboardScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        nama,
+                        widget.nama,
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -152,7 +230,7 @@ class DashboardScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          role,
+                          widget.role,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -167,48 +245,94 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
 
+          // --- AREA NOTIFIKASI SYNC (FIXED: Colors.orange[900]) ---
+          if (_pendingDataCount > 0)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.orange[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off, color: Colors.orange),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "$_pendingDataCount Data Belum Upload",
+                          // FIX DISINI: Hapus const dan pakai [900]
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange[900],
+                          ),
+                        ),
+                        const Text(
+                          "Segera upload saat ada sinyal.",
+                          style: TextStyle(fontSize: 12, color: Colors.brown),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _isSyncing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : ElevatedButton(
+                          onPressed: _syncNow,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: const Text("Upload"),
+                        ),
+                ],
+              ),
+            ),
+
           // GRID MENU UTAMA
           Expanded(
             child: GridView.count(
               padding: const EdgeInsets.all(24),
-              crossAxisCount: 2, // 2 Kolom
+              crossAxisCount: 2,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
               children: [
-                // 1. STOK GUDANG
                 _buildMenuCard(
                   context,
                   "Stok Gudang",
                   Icons.warehouse,
                   Colors.orange,
-                  GudangScreen(role: role),
+                  GudangScreen(role: widget.role),
                 ),
-
-                // 2. DATA PETERNAK
                 _buildMenuCard(
                   context,
                   "Data Peternak",
                   Icons.people,
                   Colors.blue,
-                  DataPeternakScreen(role: role),
+                  DataPeternakScreen(role: widget.role),
                 ),
-
-                // 3. INPUT PELAYANAN (Penting!)
                 _buildMenuCard(
                   context,
                   "Input Pelayanan",
                   Icons.pets,
                   Colors.purple,
                   const InputPelayananScreen(),
+                  needRefresh: true,
                 ),
-
-                // 4. INVOICE SANGU
                 _buildMenuCard(
                   context,
                   "Invoice Sangu",
                   Icons.attach_money,
                   Colors.green,
-                  InvoiceScreen(role: role),
+                  InvoiceScreen(role: widget.role),
                 ),
               ],
             ),
@@ -218,17 +342,23 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  // WIDGET KARTU MENU BIAR RAPI
   Widget _buildMenuCard(
     BuildContext context,
     String title,
     IconData icon,
     Color color,
-    Widget page,
-  ) {
+    Widget page, {
+    bool needRefresh = false,
+  }) {
     return InkWell(
-      onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => page));
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => page),
+        );
+        if (needRefresh) {
+          _refreshDashboard();
+        }
       },
       borderRadius: BorderRadius.circular(20),
       child: Card(
