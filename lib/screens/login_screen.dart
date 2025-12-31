@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart'; // Buat kIsWeb
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dashboard_screen.dart';
-import 'verification_screen.dart'; // <--- JANGAN LUPA INI (Pastikan file verification_screen.dart sudah dibuat)
+import 'verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,7 +15,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  // Akses Supabase
+  // Tambah state loading biar tombolnya muter pas diklik
+  bool _isLoading = false;
+
   final _supabase = Supabase.instance.client;
 
   @override
@@ -33,40 +35,44 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  // --- LOGIKA BARU: CEK DATABASE DULU SEBELUM MASUK ---
+  // --- LOGIKA BARU: AMBIL NAMA & ROLE ---
   Future<void> _navigateToDashboard() async {
     if (!mounted) return;
+    setState(() => _isLoading = true); // Mulai loading
 
     final user = _supabase.auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
 
     try {
-      // 1. Kasih tau user kalau sistem lagi mikir (biar gak dikira nge-hang)
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Sedang memeriksa status akun..."),
+            content: Text("Memuat data profil..."),
             duration: Duration(seconds: 1),
           ),
         );
       }
 
-      // 2. AMBIL DATA DARI TABEL PROFILES (YANG ADA STATUS PENDING-NYA)
+      // AMBIL ROLE DAN NAMA DARI DATABASE
       final data = await _supabase
           .from('profiles')
-          .select('role, full_name')
+          .select('role, full_name') // <--- PENTING: Ambil full_name juga
           .eq('id', user.id)
-          .maybeSingle(); // Pakai maybeSingle biar gak crash kalau data belum siap
+          .maybeSingle();
 
       if (!mounted) return;
 
-      // Kalau data belum ada (misal delay internet), anggap Pending dulu biar aman
       String role = data?['role'] ?? 'Pending';
-      String nama = data?['full_name'] ?? 'User Baru';
+      // Prioritas nama: Dari Database -> Dari Google -> Default
+      String nama =
+          data?['full_name'] ??
+          user.userMetadata?['full_name'] ??
+          'Petugas Puskeswan';
 
-      // 3. CEK DISINI: PENDING ATAU DOKTER?
       if (role == 'Pending') {
-        // --- A. Kalau Pending -> LEMPAR KE RUANG TUNGGU ---
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -74,31 +80,30 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
       } else {
-        // --- B. Kalau Dokter/Admin -> MASUK DASHBOARD ---
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => DashboardScreen(role: role)),
-        );
-      }
-    } catch (e) {
-      // Kalau error koneksi atau lainnya, buang ke VerificationScreen demi keamanan
-      if (mounted) {
+        // KIRIM NAMA KE DASHBOARD
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => const VerificationScreen(nama: "User"),
+            builder: (context) => DashboardScreen(role: role, nama: nama),
           ),
         );
       }
+    } catch (e) {
+      if (mounted) {
+        // Kalau error, amanin ke verification screen atau tetap di login
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // --- FUNCTION LOGIN GOOGLE ---
   Future<void> _loginWithGoogle() async {
     try {
-      // Cek apakah aplikasi jalan di Web atau HP
       String redirectUrl = kIsWeb
-          ? 'https://puskeswan-app.vercel.app/' // <--- Pastikan link Vercel ini benar
+          ? 'https://puskeswan-app.vercel.app/'
           : 'io.supabase.flutter://login-callback';
 
       await _supabase.auth.signInWithOAuth(
@@ -118,6 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    setState(() => _isLoading = true);
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
@@ -125,6 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Isi email dan password dulu!")),
       );
+      setState(() => _isLoading = false);
       return;
     }
 
@@ -145,128 +152,198 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Definisi Warna Utama (Ungu Trenggalek)
+    final primaryColor = Colors.purple[800];
+
     return Scaffold(
-      backgroundColor: Colors.green[50],
+      backgroundColor: Colors.purple[50], // Background ungu muda banget
       body: Center(
         child: SingleChildScrollView(
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Card(
-              elevation: 5,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 1. LOGO BARU (HEWAN)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.purple.withOpacity(0.2),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.pets,
+                  size: 60,
+                  color: primaryColor,
+                ), // LOGO PAW
               ),
-              child: Padding(
+              const SizedBox(height: 24),
+
+              // 2. JUDUL
+              Text(
+                "PUSKESWAN",
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: primaryColor,
+                  letterSpacing: 2,
+                ),
+              ),
+              const Text(
+                "Kabupaten Trenggalek",
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+              const SizedBox(height: 40),
+
+              // 3. CARD FORM LOGIN
+              Container(
+                constraints: const BoxConstraints(maxWidth: 400),
                 padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.purple.withOpacity(0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.verified_user,
-                      size: 80,
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      "Pusat Kesehatan Hewan",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Masukkan akun terdaftar",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                    const SizedBox(height: 32),
                     TextField(
                       controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: "Email",
-                        hintText: "nama@puskeswan.com",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.email),
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 20,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: _passwordController,
                       obscureText: true,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: "Password",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.lock),
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 20,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
+
+                    // TOMBOL LOGIN
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _login,
+                        onPressed: _isLoading ? null : _login,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          elevation: 0,
                         ),
-                        child: const Text(
-                          "Sign In",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                "Masuk",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+
+                    const SizedBox(height: 20),
                     const Row(
                       children: [
                         Expanded(child: Divider()),
                         Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 8),
-                          child: Text("ATAU"),
+                          padding: EdgeInsets.all(8),
+                          child: Text(
+                            "ATAU",
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
                         ),
                         Expanded(child: Divider()),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
+
+                    // TOMBOL GOOGLE YANG BENER (Pake Logo Asli)
                     SizedBox(
                       width: double.infinity,
                       height: 50,
-                      child: OutlinedButton.icon(
+                      child: OutlinedButton(
                         onPressed: _loginWithGoogle,
-                        icon: const Icon(
-                          Icons.g_mobiledata,
-                          size: 30,
-                          color: Colors.red,
-                        ),
-                        label: const Text(
-                          "Masuk dengan Google",
-                          style: TextStyle(color: Colors.black87),
-                        ),
                         style: OutlinedButton.styleFrom(
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          side: BorderSide(color: Colors.grey.shade300),
+                          backgroundColor: Colors.white,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Logo Google dari Internet (Sementara)
+                            Image.network(
+                              'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/1200px-Google_%22G%22_logo.svg.png',
+                              height: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              "Masuk dengan Google",
+                              style: TextStyle(
+                                color: Colors.black87,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),

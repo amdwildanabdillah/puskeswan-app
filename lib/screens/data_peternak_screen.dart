@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DataPeternakScreen extends StatefulWidget {
-  final String role; // Menerima peran user (Admin/Dokter)
+  final String role;
   const DataPeternakScreen({super.key, required this.role});
 
   @override
@@ -11,55 +11,77 @@ class DataPeternakScreen extends StatefulWidget {
 
 class _DataPeternakScreenState extends State<DataPeternakScreen> {
   final _supabase = Supabase.instance.client;
-  final _searchController = TextEditingController(); // Buat kolom pencarian
-  String _keyword = ""; // Kata kunci pencarian
+  List<Map<String, dynamic>> _peternakList = [];
+  List<Map<String, dynamic>> _filteredList = [];
+  bool _isLoading = true;
+  final _searchController = TextEditingController();
 
-  // --- FUNGSI TAMBAH DATA ---
-  Future<void> _tambahPeternak(String nama, String alamat, String noHp) async {
-    if (nama.isEmpty) return;
+  @override
+  void initState() {
+    super.initState();
+    _fetchPeternak();
+  }
+
+  // 1. AMBIL DATA
+  Future<void> _fetchPeternak() async {
     try {
-      await _supabase.from('peternak').insert({
-        'nama': nama,
-        'alamat': alamat,
-        'no_hp': noHp,
+      final data = await _supabase
+          .from('peternak')
+          .select()
+          .order('nama', ascending: true); // Sesuaikan kolom 'nama'
+
+      setState(() {
+        _peternakList = List<Map<String, dynamic>>.from(data);
+        _filteredList = _peternakList;
+        _isLoading = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Berhasil disimpan!")));
-      }
     } catch (e) {
-      if (mounted) {
+      if (mounted)
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
     }
   }
 
-  // --- POPUP FORM ---
-  void _showForm() {
-    final namaCtrl = TextEditingController();
-    final alamatCtrl = TextEditingController();
-    final hpCtrl = TextEditingController();
+  // 2. CARI DATA
+  void _filterPeternak(String query) {
+    setState(() {
+      _filteredList = _peternakList.where((item) {
+        final nama = item['nama'].toString().toLowerCase();
+        final alamat = item['alamat'].toString().toLowerCase();
+        return nama.contains(query.toLowerCase()) ||
+            alamat.contains(query.toLowerCase());
+      }).toList();
+    });
+  }
+
+  // 3. TAMBAH / EDIT DATA
+  void _showFormDialog({Map<String, dynamic>? item}) {
+    final namaController = TextEditingController(text: item?['nama'] ?? '');
+    final alamatController = TextEditingController(text: item?['alamat'] ?? '');
+    final hpController = TextEditingController(text: item?['no_hp'] ?? '');
+    final isEdit = item != null;
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Tambah Data Peternak"),
+        title: Text(
+          isEdit ? "Edit Peternak" : "Tambah Peternak",
+          style: TextStyle(color: Colors.purple[800]),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: namaCtrl,
+              controller: namaController,
               decoration: const InputDecoration(labelText: "Nama Lengkap"),
             ),
             TextField(
-              controller: alamatCtrl,
+              controller: alamatController,
               decoration: const InputDecoration(labelText: "Alamat / Desa"),
             ),
             TextField(
-              controller: hpCtrl,
+              controller: hpController,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(labelText: "Nomor HP"),
             ),
@@ -71,12 +93,46 @@ class _DataPeternakScreenState extends State<DataPeternakScreen> {
             child: const Text("Batal"),
           ),
           ElevatedButton(
-            onPressed: () {
-              if (namaCtrl.text.isNotEmpty) {
-                _tambahPeternak(namaCtrl.text, alamatCtrl.text, hpCtrl.text);
-                Navigator.pop(context);
+            onPressed: () async {
+              if (namaController.text.isEmpty) return;
+              Navigator.pop(context); // Tutup dialog dulu
+
+              try {
+                if (isEdit) {
+                  // UPDATE
+                  await _supabase
+                      .from('peternak')
+                      .update({
+                        'nama': namaController.text,
+                        'alamat': alamatController.text,
+                        'no_hp': hpController.text,
+                      })
+                      .eq('id', item['id']);
+                } else {
+                  // INSERT BARU
+                  await _supabase.from('peternak').insert({
+                    'nama': namaController.text,
+                    'alamat': alamatController.text,
+                    'no_hp': hpController.text,
+                  });
+                }
+                _fetchPeternak(); // Refresh list
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Data berhasil disimpan!"),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text("Gagal simpan: $e")));
               }
             },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple[800],
+              foregroundColor: Colors.white,
+            ),
             child: const Text("Simpan"),
           ),
         ],
@@ -84,153 +140,123 @@ class _DataPeternakScreenState extends State<DataPeternakScreen> {
     );
   }
 
+  // 4. HAPUS DATA
+  Future<void> _deletePeternak(int id) async {
+    try {
+      await _supabase.from('peternak').delete().eq('id', id);
+      _fetchPeternak();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Data dihapus")));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Gagal menghapus")));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.purple[50],
       appBar: AppBar(
-        title: const Text("Database Peternak"),
-        backgroundColor: Colors.green,
+        title: const Text("Data Peternak"),
+        backgroundColor: Colors.purple[800],
         foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
-          // --- 1. KOLOM PENCARIAN ---
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.green[50],
+          // SEARCH BAR
+          Padding(
+            padding: const EdgeInsets.all(16.0),
             child: TextField(
               controller: _searchController,
+              onChanged: _filterPeternak,
               decoration: InputDecoration(
                 hintText: "Cari Nama atau Alamat...",
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _keyword.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _keyword = "");
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                prefixIcon: const Icon(Icons.search, color: Colors.purple),
                 filled: true,
                 fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
               ),
-              onChanged: (value) {
-                setState(() {
-                  _keyword = value.toLowerCase();
-                });
-              },
             ),
           ),
 
-          // --- 2. DAFTAR PETERNAK ---
+          // LIST DATA
           Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _supabase
-                  .from('peternak')
-                  .stream(primaryKey: ['id'])
-                  .order('nama'),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final data = snapshot.data!;
-
-                // Filter data sesuai ketikan pencarian
-                final filteredData = data.where((item) {
-                  final nama = item['nama'].toString().toLowerCase();
-                  final alamat = item['alamat'].toString().toLowerCase();
-                  return nama.contains(_keyword) || alamat.contains(_keyword);
-                }).toList();
-
-                if (filteredData.isEmpty) {
-                  return const Center(child: Text("Data tidak ditemukan."));
-                }
-
-                return ListView.builder(
-                  itemCount: filteredData.length,
-                  itemBuilder: (context, index) {
-                    final item = filteredData[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.green[100],
-                          child: Text(
-                            item['nama'][0].toUpperCase(),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _filteredList.length,
+                    itemBuilder: (context, index) {
+                      final data = _filteredList[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.purple[100],
+                            child: Text(
+                              data['nama'][0].toUpperCase(),
+                              style: TextStyle(
+                                color: Colors.purple[800],
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
-                        title: Text(
-                          item['nama'],
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text("${item['alamat']} • ${item['no_hp']}"),
-
-                        // --- LOGIKA HAPUS: CUMA ADMIN ---
-                        trailing: widget.role == 'Admin Gudang'
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.delete,
-                                  color: Colors.grey,
+                          title: Text(
+                            data['nama'],
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            "${data['alamat']} • ${data['no_hp'] ?? '-'}",
+                          ),
+                          trailing: PopupMenuButton(
+                            onSelected: (value) {
+                              if (value == 'edit') _showFormDialog(item: data);
+                              if (value == 'delete')
+                                _deletePeternak(data['id']);
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit, color: Colors.blue),
+                                    SizedBox(width: 8),
+                                    Text("Edit"),
+                                  ],
                                 ),
-                                onPressed: () async {
-                                  showDialog(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      title: const Text("Hapus Data?"),
-                                      content: const Text(
-                                        "Data ini akan hilang permanen.",
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(ctx),
-                                          child: const Text("Batal"),
-                                        ),
-                                        TextButton(
-                                          onPressed: () async {
-                                            Navigator.pop(ctx);
-                                            await _supabase
-                                                .from('peternak')
-                                                .delete()
-                                                .eq('id', item['id']);
-                                          },
-                                          child: const Text(
-                                            "Hapus",
-                                            style: TextStyle(color: Colors.red),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              )
-                            : null, // Dokter ga punya tombol hapus
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete, color: Colors.red),
+                                    SizedBox(width: 8),
+                                    Text("Hapus"),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
-
-      // --- TOMBOL TAMBAH: SEMUA BISA AKSES (DOKTER & ADMIN) ---
       floatingActionButton: FloatingActionButton(
-        onPressed: _showForm,
-        backgroundColor: Colors.green,
-        child: const Icon(Icons.person_add, color: Colors.white),
+        onPressed: () => _showFormDialog(),
+        backgroundColor: Colors.purple[800],
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
