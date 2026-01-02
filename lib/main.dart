@@ -23,7 +23,7 @@ class PuskeswanApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'UPTD Puskeswan',
+      title: 'UPT PUSKESWAN TRENGGALEK',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,

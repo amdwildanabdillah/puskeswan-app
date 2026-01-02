@@ -363,7 +363,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      "Cloud & AI-Ready Solutions",
+                      "Visuals by Heart, Logic by Code.",
                       style: GoogleFonts.poppins(
                         color: Colors.purple[100],
                         fontSize: 12,

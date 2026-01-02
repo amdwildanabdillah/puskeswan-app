@@ -17,90 +17,123 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
   final _formKey = GlobalKey<FormState>();
   final _supabase = Supabase.instance.client;
 
-  // Controllers
-  final _anamnesaController = TextEditingController();
-  final _diagnosaController = TextEditingController();
-  final _tindakanController = TextEditingController();
-  final _biayaController = TextEditingController();
-
-  // State Variables
+  // --- STATE VARIABLES ---
   DateTime _selectedDate = DateTime.now();
   bool _isLoading = false;
   bool _isInit = false;
 
-  // --- BAGIAN INI YANG KITA FIX ---
-  // Dulu error karena isinya ['Sapi', 'Kambing'] (String)
-  // Sekarang kita kosongkan [] biar siap nampung data dari Database (Map)
+  // DATA LISTS
   List<Map<String, dynamic>> _peternakList = [];
   List<Map<String, dynamic>> _hewanList = [];
-  // -------------------------------
+  List<Map<String, dynamic>> _obatList = [];
+  List<String> _diagnosaList = [
+    'Demam Three Day',
+    'PMK',
+    'LSD',
+    'Kembung',
+    'Cacingan',
+  ];
+  List<String> _bangsaList = ['Limosin', 'Simental', 'PO', 'Brahman', 'Jawa'];
 
-  // Selection Variables
+  // SELECTION
   String? _selectedPeternakId;
   String? _selectedPeternakNama;
   String? _selectedHewanId;
   Map<String, dynamic>? _selectedHewanDetail;
 
+  // LOGIC UI
+  String _kategoriLayanan = 'Pengobatan';
+  final List<String> _layananOptions = [
+    'Pengobatan',
+    'IB (Inseminasi)',
+    'PKB (Cek Hamil)',
+    'Vaksinasi',
+  ];
+
+  // CONTROLLERS
+  final _anamnesaController = TextEditingController();
+  final _diagnosaController = TextEditingController();
+  final _tindakanController = TextEditingController();
+  final _biayaController = TextEditingController();
+  final _strawController = TextEditingController();
+
+  // OBAT CONTROLLERS (Max 5)
+  final List<String?> _selectedObatIds = [null, null, null, null, null];
+  final List<String?> _selectedObatNames = [null, null, null, null, null];
+
   @override
   void initState() {
     super.initState();
-    // Inisialisasi Format Tanggal Indo
     initializeDateFormatting('id_ID', null).then((_) {
       if (mounted) {
         setState(() => _isInit = true);
-        _fetchPeternak();
+        _fetchInitialData();
       }
     });
   }
 
-  // 1. AMBIL DATA PETERNAK
-  Future<void> _fetchPeternak() async {
+  Future<void> _fetchInitialData() async {
     try {
-      final data = await _supabase
+      final dataPeternak = await _supabase
           .from('peternak')
           .select('id, nama')
-          .order('nama', ascending: true);
+          .order('nama');
+      final dataObat = await _supabase
+          .from('barang')
+          .select('id, nama_barang, stok')
+          .gt('stok', 0)
+          .order('nama_barang');
+
+      try {
+        final dataDiagnosa = await _supabase
+            .from('master_diagnosa')
+            .select('nama_penyakit');
+        final dataBangsa = await _supabase
+            .from('master_bangsa')
+            .select('nama_bangsa');
+        if (mounted) {
+          setState(() {
+            _diagnosaList = List<String>.from(
+              dataDiagnosa.map((e) => e['nama_penyakit']),
+            );
+            _bangsaList = List<String>.from(
+              dataBangsa.map((e) => e['nama_bangsa']),
+            );
+          });
+        }
+      } catch (e) {} // Silent fail
 
       if (mounted) {
         setState(() {
-          _peternakList = List<Map<String, dynamic>>.from(data);
+          _peternakList = List<Map<String, dynamic>>.from(dataPeternak);
+          _obatList = List<Map<String, dynamic>>.from(dataObat);
         });
       }
-    } catch (e) {
-      // Silent error kalau offline
-    }
+    } catch (e) {}
   }
 
-  // 2. AMBIL DATA HEWAN (Berdasarkan Peternak yg dipilih)
   Future<void> _fetchHewanByPeternak(String peternakId) async {
     try {
-      // Reset pilihan hewan saat ganti peternak
       setState(() {
         _hewanList = [];
         _selectedHewanId = null;
         _selectedHewanDetail = null;
       });
-
       final data = await _supabase
           .from('hewan')
           .select()
           .eq('peternak_id', peternakId)
           .order('created_at', ascending: false);
-
-      if (mounted) {
-        setState(() {
-          _hewanList = List<Map<String, dynamic>>.from(data);
-        });
-      }
-    } catch (e) {
-      // Handle error
-    }
+      if (mounted)
+        setState(() => _hewanList = List<Map<String, dynamic>>.from(data));
+    } catch (e) {}
   }
 
-  // 3. FITUR TAMBAH PETERNAK (Pop-up)
+  // --- POPUP ADD PETERNAK ---
   Future<void> _addPeternakDialog() async {
     final namaCtrl = TextEditingController();
-    final alamatCtrl = TextEditingController();
+    final desaCtrl = TextEditingController();
+    final rtCtrl = TextEditingController();
     final hpCtrl = TextEditingController();
 
     await showDialog(
@@ -110,23 +143,41 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
           "Peternak Baru",
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: namaCtrl,
-              decoration: const InputDecoration(labelText: "Nama Lengkap"),
-            ),
-            TextField(
-              controller: alamatCtrl,
-              decoration: const InputDecoration(labelText: "Alamat / Desa"),
-            ),
-            TextField(
-              controller: hpCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: "No HP (Opsional)"),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: namaCtrl,
+                decoration: _inputDecor("Nama Lengkap"),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: desaCtrl,
+                      decoration: _inputDecor("Desa"),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: rtCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: _inputDecor("RT"),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: hpCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: _inputDecor("No HP (Opsional)"),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -137,27 +188,24 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
             onPressed: () async {
               if (namaCtrl.text.isEmpty) return;
               try {
-                // Simpan & Ambil data balikan
                 final res = await _supabase
                     .from('peternak')
                     .insert({
                       'nama': namaCtrl.text,
-                      'alamat': alamatCtrl.text,
+                      'alamat': "${desaCtrl.text}, RT ${rtCtrl.text}",
+                      'desa': desaCtrl.text,
+                      'rt': rtCtrl.text,
                       'no_hp': hpCtrl.text,
                     })
                     .select()
                     .single();
 
-                // Refresh List
-                await _fetchPeternak();
-
-                // Otomatis Pilih Peternak Baru
+                await _fetchInitialData();
                 setState(() {
                   _selectedPeternakId = res['id'].toString();
                   _selectedPeternakNama = res['nama'];
                 });
                 _fetchHewanByPeternak(res['id'].toString());
-
                 if (mounted) Navigator.pop(context);
               } catch (e) {
                 ScaffoldMessenger.of(
@@ -176,123 +224,247 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
     );
   }
 
-  // 4. FITUR TAMBAH HEWAN (Pop-up)
+  // --- POPUP ADD HEWAN (REVISI LENGKAP) ---
   Future<void> _addHewanDialog() async {
     if (_selectedPeternakId == null) return;
 
-    final jenisCtrl = TextEditingController(text: 'Sapi');
+    String? jenis;
+    String? bangsa;
     final kodeCtrl = TextEditingController();
     final ciriCtrl = TextEditingController();
+    final newJenisCtrl = TextEditingController();
+    final newBangsaCtrl = TextEditingController();
+
+    List<String> localJenisList = ['Sapi', 'Kambing', 'Domba'];
+    List<String> localBangsaList = List.from(_bangsaList);
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          "Hewan Baru",
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: jenisCtrl,
-              decoration: const InputDecoration(
-                labelText: "Jenis (Sapi/Kambing)",
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateSB) {
+          return AlertDialog(
+            title: Text(
+              "Hewan Baru",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: jenis,
+                    decoration: _inputDecor("Jenis Hewan"),
+                    hint: const Text("Pilih Jenis"),
+                    items: [
+                      ...localJenisList.map(
+                        (e) => DropdownMenuItem(value: e, child: Text(e)),
+                      ),
+                      const DropdownMenuItem(
+                        value: 'ADD_NEW',
+                        child: Row(
+                          children: [
+                            Icon(Icons.add, size: 16, color: Colors.purple),
+                            Text(
+                              " Lainnya...",
+                              style: TextStyle(color: Colors.purple),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      if (val == 'ADD_NEW') {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text("Jenis Hewan Baru"),
+                            content: TextField(
+                              controller: newJenisCtrl,
+                              decoration: _inputDecor("Nama Jenis"),
+                            ),
+                            actions: [
+                              ElevatedButton(
+                                onPressed: () {
+                                  if (newJenisCtrl.text.isNotEmpty) {
+                                    setStateSB(() {
+                                      localJenisList.add(newJenisCtrl.text);
+                                      jenis = newJenisCtrl.text;
+                                    });
+                                    Navigator.pop(ctx);
+                                  }
+                                },
+                                child: const Text("Tambah"),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else {
+                        setStateSB(() => jenis = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  DropdownButtonFormField<String>(
+                    value: bangsa,
+                    decoration: _inputDecor("Bangsa / Ras"),
+                    hint: const Text("Pilih Ras (Limosin, dll)"),
+                    items: [
+                      ...localBangsaList.map(
+                        (e) => DropdownMenuItem(value: e, child: Text(e)),
+                      ),
+                      const DropdownMenuItem(
+                        value: 'ADD_NEW',
+                        child: Row(
+                          children: [
+                            Icon(Icons.add, size: 16, color: Colors.purple),
+                            Text(
+                              " Tambah Ras...",
+                              style: TextStyle(color: Colors.purple),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      if (val == 'ADD_NEW') {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text("Tambah Ras Baru"),
+                            content: TextField(
+                              controller: newBangsaCtrl,
+                              decoration: _inputDecor("Nama Ras"),
+                            ),
+                            actions: [
+                              ElevatedButton(
+                                onPressed: () {
+                                  if (newBangsaCtrl.text.isNotEmpty) {
+                                    try {
+                                      _supabase.from('master_bangsa').insert({
+                                        'nama_bangsa': newBangsaCtrl.text,
+                                      });
+                                    } catch (e) {}
+                                    setStateSB(() {
+                                      localBangsaList.add(newBangsaCtrl.text);
+                                      bangsa = newBangsaCtrl.text;
+                                    });
+                                    Navigator.pop(ctx);
+                                  }
+                                },
+                                child: const Text("Tambah"),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else {
+                        setStateSB(() => bangsa = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  TextField(
+                    controller: kodeCtrl,
+                    decoration: _inputDecor("Kode Anting / Nama"),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: ciriCtrl,
+                    decoration: _inputDecor("Ciri-ciri / Warna (Opsional)"),
+                  ),
+                  const SizedBox(height: 10),
+
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.grey[50],
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(
+                          Icons.camera_alt,
+                          color: Colors.grey,
+                          size: 30,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Upload Foto (Opsional)",
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            TextField(
-              controller: kodeCtrl,
-              decoration: const InputDecoration(
-                labelText: "Kode Anting / Nama",
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Batal"),
               ),
-            ),
-            TextField(
-              controller: ciriCtrl,
-              decoration: const InputDecoration(labelText: "Ciri-ciri / Warna"),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Batal"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (kodeCtrl.text.isEmpty) return;
-              try {
-                final res = await _supabase
-                    .from('hewan')
-                    .insert({
-                      'peternak_id': _selectedPeternakId,
-                      'jenis': jenisCtrl.text,
-                      'kode_anting': kodeCtrl.text,
-                      'ciri_ciri': ciriCtrl.text,
-                    })
-                    .select()
-                    .single();
+              ElevatedButton(
+                onPressed: () async {
+                  if (kodeCtrl.text.isEmpty || jenis == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Jenis & Identitas Wajib Diisi!"),
+                      ),
+                    );
+                    return;
+                  }
+                  try {
+                    final res = await _supabase
+                        .from('hewan')
+                        .insert({
+                          'peternak_id': _selectedPeternakId,
+                          'jenis': jenis,
+                          'bangsa': bangsa,
+                          'kode_anting': kodeCtrl.text,
+                          'ciri_ciri': ciriCtrl.text,
+                        })
+                        .select()
+                        .single();
 
-                // Refresh List Hewan
-                await _fetchHewanByPeternak(_selectedPeternakId!);
-
-                // Otomatis Pilih Hewan Baru
-                setState(() {
-                  _selectedHewanId = res['id'].toString();
-                  _selectedHewanDetail = res;
-                });
-
-                if (mounted) Navigator.pop(context);
-              } catch (e) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text("Gagal: $e")));
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.purple,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text("Simpan"),
-          ),
-        ],
+                    await _fetchHewanByPeternak(_selectedPeternakId!);
+                    setState(() {
+                      _selectedHewanId = res['id'].toString();
+                      _selectedHewanDetail = res;
+                    });
+                    if (mounted) Navigator.pop(context);
+                  } catch (e) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text("Gagal: $e")));
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text("Simpan"),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  // DATE PICKER
-  Future<void> _pickDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Colors.purple),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() => _selectedDate = picked);
-    }
-  }
-
-  // SUBMIT DATA PELAYANAN
+  // --- SUBMIT UTAMA ---
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedPeternakId == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Pilih Peternak dulu!")));
-      return;
-    }
-    if (_selectedHewanId == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Pilih Hewan Ternak dulu!")));
+    if (_selectedPeternakId == null || _selectedHewanId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Data Pasien belum lengkap!")),
+      );
       return;
     }
 
@@ -306,43 +478,46 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
           0;
       String userEmail = _supabase.auth.currentUser?.email ?? 'admin';
 
-      // Format info hewan biar jelas di riwayat
       String detailHewanFix =
-          "${_selectedHewanDetail?['kode_anting']} - ${_selectedHewanDetail?['ciri_ciri']}";
+          "${_selectedHewanDetail?['kode_anting']} - ${_selectedHewanDetail?['bangsa'] ?? ''}";
 
       final dataLaporan = {
         'nama_peternak': _selectedPeternakNama,
         'jenis_hewan': _selectedHewanDetail?['jenis'] ?? 'Umum',
         'detail_hewan': detailHewanFix,
-        'jumlah_hewan': 1, // Default 1 ekor per transaksi
+        'jumlah_hewan': 1,
         'anamnesa': _anamnesaController.text.trim(),
-        'diagnosa': _diagnosaController.text.trim(),
+        'kategori_layanan': _kategoriLayanan,
+        'diagnosa': _kategoriLayanan == 'Pengobatan'
+            ? _diagnosaController.text.trim()
+            : '-',
         'jenis_layanan': _tindakanController.text.trim(),
+        'kode_straw': _kategoriLayanan == 'IB (Inseminasi)'
+            ? _strawController.text.trim()
+            : null,
+        'obat_1': _selectedObatNames[0],
+        'obat_2': _selectedObatNames[1],
+        'obat_3': _selectedObatNames[2],
+        'obat_4': _selectedObatNames[3],
+        'obat_5': _selectedObatNames[4],
         'biaya': biayaFix,
         'waktu': _selectedDate.toIso8601String(),
         'dokter_email': userEmail,
       };
 
-      // Cek Sinyal (Online/Offline)
       final connectivityResult = await (Connectivity().checkConnectivity());
-      bool isOffline = connectivityResult.contains(ConnectivityResult.none);
-
-      if (isOffline) {
+      if (connectivityResult.contains(ConnectivityResult.none)) {
         await DatabaseHelper().insertTransaksi(dataLaporan);
         if (mounted)
           _showSuccessDialog(
             "OFFLINE MODE",
-            "Data tersimpan di HP. Upload saat online nanti ya!",
+            "Data tersimpan di HP.",
             Colors.orange,
           );
       } else {
         await _supabase.from('pelayanan').insert(dataLaporan);
         if (mounted)
-          _showSuccessDialog(
-            "BERHASIL",
-            "Laporan pelayanan tersimpan!",
-            Colors.green,
-          );
+          _showSuccessDialog("BERHASIL", "Laporan tersimpan!", Colors.green);
       }
     } catch (e) {
       if (mounted)
@@ -361,48 +536,39 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Column(
           children: [
-            Icon(
-              color == Colors.green ? Icons.check_circle : Icons.wifi_off,
-              size: 50,
-              color: color,
-            ),
-            const SizedBox(height: 10),
+            Icon(Icons.check_circle, size: 50, color: color),
             Text(
               title,
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
+              style: TextStyle(color: color, fontWeight: FontWeight.bold),
             ),
           ],
         ),
-        content: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(),
-        ),
+        content: Text(message, textAlign: TextAlign.center),
         actions: [
-          Center(
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context); // Balik Dashboard
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: color,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text("OK, Mengerti"),
-            ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+            child: const Text("OK"),
           ),
         ],
       ),
     );
   }
 
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _selectedDate = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Loading awal buat siapin Kamus Tanggal
     if (!_isInit)
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
@@ -412,332 +578,378 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
         title: Text(
           "Input Pelayanan",
           style: GoogleFonts.poppins(
-            color: Colors.black,
             fontWeight: FontWeight.bold,
+            color: Colors.black,
           ),
         ),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: const BackButton(color: Colors.black),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 0. DATE PICKER
-              InkWell(
-                onTap: _pickDate,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.purple[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.purple.withOpacity(0.3)),
+      // WRAP PAKE SAFEAREA BIAR GA KEPOTONG STATUS BAR/NAV BAR BROWSER
+      body: SafeArea(
+        child: SingleChildScrollView(
+          // TAMBAH PADDING BAWAH YANG BANYAK BIAR BISA DI SCROLL SAMPAI MENTOK
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: _pickDate,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.purple[50],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today, color: Colors.purple),
+                        const SizedBox(width: 12),
+                        Text(
+                          DateFormat(
+                            'EEEE, d MMMM yyyy',
+                            'id_ID',
+                          ).format(_selectedDate),
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.purple,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(
+                ),
+                const SizedBox(height: 24),
+
+                _buildSectionTitle("Data Pasien", Icons.pets),
+                _buildCardContainer(
+                  Column(
                     children: [
-                      const Icon(Icons.calendar_today, color: Colors.purple),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
                         children: [
-                          Text(
-                            "Tanggal Pelayanan",
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.purple[900],
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: _inputDecor("Pilih Peternak"),
+                              value: _selectedPeternakId,
+                              isExpanded: true,
+                              items: _peternakList
+                                  .map(
+                                    (p) => DropdownMenuItem(
+                                      value: p['id'].toString(),
+                                      child: Text(p['nama']),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedPeternakId = val;
+                                  _selectedPeternakNama = _peternakList
+                                      .firstWhere(
+                                        (e) => e['id'].toString() == val,
+                                      )['nama'];
+                                });
+                                _fetchHewanByPeternak(val!);
+                              },
                             ),
                           ),
-                          Text(
-                            DateFormat(
-                              'EEEE, d MMMM yyyy',
-                              'id_ID',
-                            ).format(_selectedDate),
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.purple,
+                          const SizedBox(width: 8),
+                          _buildAddButton(_addPeternakDialog),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: _inputDecor("Pilih Hewan"),
+                              value: _selectedHewanId,
+                              hint: const Text("Pilih Hewan..."),
+                              isExpanded: true,
+                              items: _hewanList
+                                  .map(
+                                    (h) => DropdownMenuItem(
+                                      value: h['id'].toString(),
+                                      child: Text(
+                                        "${h['jenis']} - ${h['kode_anting']}",
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: _selectedPeternakId == null
+                                  ? null
+                                  : (val) {
+                                      setState(() {
+                                        _selectedHewanId = val;
+                                        _selectedHewanDetail = _hewanList
+                                            .firstWhere(
+                                              (e) => e['id'].toString() == val,
+                                            );
+                                      });
+                                    },
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          _buildAddButton(
+                            _selectedPeternakId == null
+                                ? null
+                                : _addHewanDialog,
                           ),
                         ],
                       ),
-                      const Spacer(),
-                      const Icon(Icons.edit, size: 16, color: Colors.purple),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
 
-              // 1. DATA PASIEN
-              _buildHeader("Data Pasien", Icons.pets),
-              const SizedBox(height: 16),
+                const SizedBox(height: 24),
 
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: _boxDecoration(),
-                child: Column(
-                  children: [
-                    // PILIH PETERNAK
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            decoration: _inputDecor("Pilih Peternak"),
-                            value: _selectedPeternakId,
-                            isExpanded: true,
-                            items: _peternakList.map((peternak) {
-                              return DropdownMenuItem<String>(
-                                value: peternak['id'].toString(),
-                                child: Text(
-                                  peternak['nama'],
-                                  style: GoogleFonts.poppins(),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedPeternakId = value;
-                                final selectedData = _peternakList.firstWhere(
-                                  (e) => e['id'].toString() == value,
-                                );
-                                _selectedPeternakNama = selectedData['nama'];
-                              });
-                              // Ambil Hewan milik Peternak ini
-                              _fetchHewanByPeternak(value!);
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // TOMBOL ADD PETERNAK
-                        InkWell(
-                          onTap: _addPeternakDialog,
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.purple[100],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.person_add,
-                              color: Colors.purple,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // PILIH HEWAN
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            decoration: _inputDecor("Pilih Hewan Ternak"),
-                            value: _selectedHewanId,
-                            isExpanded: true,
-                            hint: Text(
-                              _selectedPeternakId == null
-                                  ? "Pilih peternak dulu"
-                                  : "Pilih sapi/kambing...",
-                              style: GoogleFonts.poppins(fontSize: 12),
-                            ),
-                            // Data Hewan diambil dari Database, bukan List String manual lagi
-                            items: _hewanList.map((hewan) {
-                              return DropdownMenuItem<String>(
-                                value: hewan['id'].toString(),
-                                child: Text(
-                                  "${hewan['jenis']} - ${hewan['kode_anting']} (${hewan['ciri_ciri']})",
-                                  style: GoogleFonts.poppins(fontSize: 13),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: _selectedPeternakId == null
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      _selectedHewanId = value;
-                                      _selectedHewanDetail = _hewanList
-                                          .firstWhere(
-                                            (e) => e['id'].toString() == value,
-                                          );
-                                    });
-                                  },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // TOMBOL ADD HEWAN
-                        InkWell(
-                          onTap: _selectedPeternakId == null
-                              ? null
-                              : _addHewanDialog,
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: _selectedPeternakId == null
-                                  ? Colors.grey[200]
-                                  : Colors.purple[100],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(
-                              Icons.add_circle,
-                              color: _selectedPeternakId == null
-                                  ? Colors.grey
-                                  : Colors.purple,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              // 2. MEDIS & BIAYA
-              _buildHeader("Medis & Biaya", Icons.medical_services),
-              const SizedBox(height: 16),
-
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: _boxDecoration(),
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _anamnesaController,
-                      maxLines: 2,
-                      decoration: _inputDecor("Anamnesa / Keluhan"),
-                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _diagnosaController,
-                      decoration: _inputDecor("Diagnosa Penyakit"),
-                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _tindakanController,
-                      decoration: _inputDecor("Tindakan / Obat"),
-                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _biayaController,
-                      keyboardType: TextInputType.number,
-                      decoration: _inputDecor("Biaya Pelayanan (Rp)"),
-                      validator: (val) => val!.isEmpty ? "Wajib diisi" : null,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 40),
-
-              // TOMBOL SIMPAN
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 4,
+                _buildSectionTitle("Jenis Pelayanan", Icons.medical_services),
+                _buildCardContainer(
+                  DropdownButtonFormField<String>(
+                    value: _kategoriLayanan,
+                    decoration: _inputDecor("Kategori"),
+                    items: _layananOptions
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: (val) => setState(() => _kategoriLayanan = val!),
                   ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.save_rounded),
-                            const SizedBox(width: 8),
-                            Text(
-                              "SIMPAN LAPORAN",
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                ),
+
+                const SizedBox(height: 24),
+
+                _buildSectionTitle("Detail Medis & Biaya", Icons.assignment),
+                _buildCardContainer(
+                  Column(
+                    children: [
+                      TextFormField(
+                        controller: _anamnesaController,
+                        maxLines: 2,
+                        decoration: _inputDecor("Anamnesa (Keluhan)"),
+                        validator: (v) => v!.isEmpty ? "Isi dulu" : null,
+                      ),
+                      const SizedBox(height: 16),
+
+                      if (_kategoriLayanan.contains('IB')) ...[
+                        TextFormField(
+                          controller: _strawController,
+                          decoration: _inputDecor("Kode Straw / Pejantan"),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      if (_kategoriLayanan == 'Pengobatan') ...[
+                        DropdownButtonFormField<String>(
+                          decoration: _inputDecor("Diagnosa"),
+                          value: null,
+                          hint: const Text("Pilih / Tambah Diagnosa"),
+                          items: [
+                            ..._diagnosaList.map(
+                              (e) => DropdownMenuItem(value: e, child: Text(e)),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'ADD_NEW',
+                              child: Text(
+                                "+ Tambah Diagnosa Baru",
+                                style: TextStyle(color: Colors.purple),
                               ),
                             ),
                           ],
+                          onChanged: (val) {
+                            if (val == 'ADD_NEW') {
+                              final diagCtrl = TextEditingController();
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text("Diagnosa Baru"),
+                                  content: TextField(
+                                    controller: diagCtrl,
+                                    decoration: _inputDecor("Nama Penyakit"),
+                                  ),
+                                  actions: [
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        if (diagCtrl.text.isNotEmpty) {
+                                          setState(
+                                            () => _diagnosaList.add(
+                                              diagCtrl.text,
+                                            ),
+                                          );
+                                          _diagnosaController.text =
+                                              diagCtrl.text;
+                                          Navigator.pop(ctx);
+                                        }
+                                      },
+                                      child: const Text("Simpan"),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            } else {
+                              _diagnosaController.text = val!;
+                            }
+                          },
                         ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      TextFormField(
+                        controller: _tindakanController,
+                        decoration: _inputDecor("Tindakan / Penanganan"),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "Resep Obat:",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...List.generate(5, (index) {
+                        if (index == 0 || _selectedObatIds[index - 1] != null) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: DropdownButtonFormField<String>(
+                              decoration: _inputDecor("Obat ke-${index + 1}"),
+                              value: _selectedObatIds[index],
+                              isExpanded: true,
+                              hint: const Text("Pilih Obat..."),
+                              items: _obatList
+                                  .map(
+                                    (obat) => DropdownMenuItem(
+                                      value: obat['id'].toString(),
+                                      child: Text(
+                                        "${obat['nama_barang']} (Sisa: ${obat['stok']})",
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedObatIds[index] = val;
+                                  _selectedObatNames[index] = _obatList
+                                      .firstWhere(
+                                        (e) => e['id'].toString() == val,
+                                      )['nama_barang'];
+                                });
+                              },
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      }),
+
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _biayaController,
+                        keyboardType: TextInputType.number,
+                        decoration: _inputDecor("Biaya Pelayanan (Rp)"),
+                        validator: (v) => v!.isEmpty ? "Isi biaya" : null,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-            ],
+
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                            "SIMPAN LAPORAN",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 50),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // Styles
   InputDecoration _inputDecor(String label) {
     return InputDecoration(
       labelText: label,
-      labelStyle: GoogleFonts.poppins(color: Colors.grey[500], fontSize: 13),
       filled: true,
       fillColor: Colors.grey[50],
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     );
   }
 
-  BoxDecoration _boxDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.grey[100]!),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.grey.withOpacity(0.05),
-          blurRadius: 10,
-          offset: const Offset(0, 4),
-        ),
-      ],
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.purple, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildHeader(String title, IconData icon) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.purple[50],
-            borderRadius: BorderRadius.circular(8),
+  Widget _buildCardContainer(Widget child) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          child: Icon(icon, color: Colors.purple, size: 20),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildAddButton(VoidCallback? onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: onTap == null ? Colors.grey[200] : Colors.purple[100],
+          borderRadius: BorderRadius.circular(12),
         ),
-        const SizedBox(width: 12),
-        Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
+        child: Icon(
+          Icons.add,
+          color: onTap == null ? Colors.grey : Colors.purple,
         ),
-      ],
+      ),
     );
   }
 }

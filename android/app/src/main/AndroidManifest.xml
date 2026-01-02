@@ -2,7 +2,7 @@
     package="com.example.puskeswan_app"> <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:label="puskeswan_app"
+        android:label="PUSKESWAN MOBILE"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

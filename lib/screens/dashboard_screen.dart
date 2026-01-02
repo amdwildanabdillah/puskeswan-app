@@ -4,13 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/database_helper.dart';
 
-// Import Screen Lainnya
 import 'login_screen.dart';
 import 'gudang_screen.dart';
 import 'input_pelayanan.dart';
 import 'invoice_screen.dart';
 import 'data_peternak_screen.dart';
-import 'about_screen.dart'; // <--- INI HALAMAN PROFIL
+import 'about_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String role;
@@ -27,10 +26,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isSyncing = false;
   int _selectedIndex = 0;
 
-  // Dummy Statistik (Bisa diganti real data nanti)
-  int _totalPasien = 0;
-  int _pendapatanHariIni = 0;
-
   @override
   void initState() {
     super.initState();
@@ -46,30 +41,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted) setState(() => _pendingDataCount = count);
   }
 
+  // --- LOGIKA SYNC (UPLOAD DATA OFFLINE) ---
   Future<void> _syncNow() async {
     final connectivityResult = await (Connectivity().checkConnectivity());
-    if (connectivityResult.contains(ConnectivityResult.none)) return;
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Tidak ada internet!")));
+      return;
+    }
 
     setState(() => _isSyncing = true);
     try {
       final db = DatabaseHelper();
       final pendingList = await db.getTransaksiPending();
+
       for (var item in pendingList) {
         final dataToUpload = Map<String, dynamic>.from(item);
-        dataToUpload.remove('id');
+        dataToUpload.remove('id'); // Hapus ID lokal
+
         await Supabase.instance.client.from('pelayanan').insert(dataToUpload);
-        await db.deleteTransaksi(item['id']);
+        await db.deleteTransaksi(
+          item['id'],
+        ); // Hapus dari HP kalau udah sukses upload
       }
+
       _checkPendingData();
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Sync Berhasil!"),
+            content: Text("Sync Berhasil! Data Offline Terupload."),
             backgroundColor: Colors.green,
           ),
         );
     } catch (e) {
-      // Error handling
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Sync Gagal: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
     } finally {
       if (mounted) setState(() => _isSyncing = false);
     }
@@ -84,23 +96,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
   }
 
-  // --- NAVIGASI BAWAH (LOGIKA BARU) ---
+  // --- NAVIGASI FIX (ABOUT CUMA NUMPANG LEWAT) ---
   void _onItemTapped(int index) {
     if (index == 0) {
-      // HOME (Tetap di sini)
       setState(() => _selectedIndex = 0);
     } else if (index == 1) {
-      // ABOUT (Munculin Modal Info)
-      setState(() => _selectedIndex = 1);
+      // JANGAN UBAH _selectedIndex BIAR NAVIGASI TETAP DI HOME
       _showSimpleAboutDialog();
     } else if (index == 2) {
-      // PROFILE (Pindah ke Screen Profil)
       setState(() => _selectedIndex = 2);
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const AboutScreen()),
+        MaterialPageRoute(
+          builder: (context) => const AboutScreen(),
+        ), // Ke Halaman Profil
       ).then((_) {
-        // Pas balik dari profil, reset indikator ke Home lagi (Opsional, biar UX enak)
+        // Pas balik, reset ke Home
         setState(() => _selectedIndex = 0);
       });
     }
@@ -145,14 +156,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-  // ------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-
-      // APP BAR
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -193,12 +201,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             onPressed: _logout,
             icon: const Icon(Icons.logout, color: Colors.grey),
-            tooltip: "Logout",
           ),
         ],
       ),
-
-      // BODY
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
         child: Column(
@@ -236,25 +241,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         const SizedBox(height: 12),
                         ElevatedButton(
-                          onPressed: () {
-                            // Shortcut ke Input Pelayanan
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    const InputPelayananScreen(),
-                              ),
-                            );
-                          },
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const InputPelayananScreen(),
+                            ),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF7B1FA2),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 0,
                             ),
                             elevation: 0,
                           ),
@@ -274,10 +272,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 24),
 
-            // ALERT SYNC
+            // ALERT SYNC (KOTAK ORANYE)
             if (_pendingDataCount > 0)
               InkWell(
                 onTap: _syncNow,
@@ -310,7 +307,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          "$_pendingDataCount Data Offline",
+                          "$_pendingDataCount Data Offline (Belum Terkirim)",
                           style: GoogleFonts.poppins(
                             fontWeight: FontWeight.w600,
                             color: Colors.orange[900],
@@ -328,16 +325,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               ),
-
-            // MENU TITLE
-            Text(
-              "Layanan Utama",
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 16),
 
             // MENU GRID
             GridView.count(
@@ -385,7 +372,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
 
-      // 3. BOTTOM NAVIGATION BAR (YANG TADI MATI SURI)
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFF7B1FA2),
@@ -393,7 +379,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         showUnselectedLabels: false,
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
-        onTap: _onItemTapped, // <--- Panggil Fungsi Baru Tadi
+        onTap: _onItemTapped,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_rounded),

@@ -6,10 +6,12 @@ import 'package:intl/intl.dart';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../services/database_helper.dart';
 
 class InvoiceScreen extends StatefulWidget {
-  final String role; // 'Admin Gudang' atau 'Dokter Hewan'
+  final String role;
   const InvoiceScreen({super.key, required this.role});
 
   @override
@@ -18,15 +20,12 @@ class InvoiceScreen extends StatefulWidget {
 
 class _InvoiceScreenState extends State<InvoiceScreen> {
   final _supabase = Supabase.instance.client;
-
   List<Map<String, dynamic>> _allTransaksi = [];
   bool _isLoading = true;
   int _totalSangu = 0;
-
-  // --- FILTER VARIABLES ---
-  DateTime? _selectedDate; // Kalau null = Tampilkan Semua Tanggal
-  String? _selectedDokterEmail; // Kalau null = Semua Dokter (Khusus Admin)
-  List<String> _dokterList = ['Semua Dokter']; // List buat Dropdown
+  DateTime? _selectedDate;
+  String? _selectedDokterEmail;
+  List<String> _dokterList = ['Semua Dokter'];
 
   @override
   void initState() {
@@ -35,44 +34,32 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   }
 
   Future<void> _initData() async {
-    await _fetchDokterList(); // Ambil daftar dokter dulu
-    await _fetchHistory(); // Baru ambil transaksi
+    await _fetchDokterList();
+    await _fetchHistory();
   }
 
-  // 1. AMBIL LIST DOKTER (Buat Filter Admin)
   Future<void> _fetchDokterList() async {
     if (widget.role == 'Admin Gudang') {
       try {
-        // Ambil email dokter unik dari tabel pelayanan (biar pasti ada datanya)
         final data = await _supabase.from('pelayanan').select('dokter_email');
-
         final List<String> emails = ['Semua Dokter'];
         for (var item in data) {
           final email = item['dokter_email'] as String;
           if (!emails.contains(email)) emails.add(email);
         }
-
-        if (mounted) {
-          setState(() {
-            _dokterList = emails;
-          });
-        }
+        if (mounted) setState(() => _dokterList = emails);
       } catch (e) {
         // Silent error
       }
     }
   }
 
-  // 2. LOGIKA UTAMA: AMBIL DATA
   Future<void> _fetchHistory() async {
     setState(() => _isLoading = true);
     try {
       final userEmail = _supabase.auth.currentUser?.email;
-
-      // --- A. DATA ONLINE (Supabase) ---
       var queryBuilder = _supabase.from('pelayanan').select();
 
-      // FILTER 1: TANGGAL
       if (_selectedDate != null) {
         final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate!);
         queryBuilder = queryBuilder
@@ -80,38 +67,29 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             .lte('waktu', '$dateStr 23:59:59');
       }
 
-      // FILTER 2: ROLE & DOKTER
       if (widget.role == 'Admin Gudang') {
-        // Kalau Admin pilih dokter spesifik
         if (_selectedDokterEmail != null &&
             _selectedDokterEmail != 'Semua Dokter') {
           queryBuilder = queryBuilder.eq('dokter_email', _selectedDokterEmail!);
         }
       } else {
-        // Kalau Dokter Biasa, WAJIB filter punya sendiri
         queryBuilder = queryBuilder.eq('dokter_email', userEmail!);
       }
 
-      // EKSEKUSI QUERY
       final onlineData = await queryBuilder.order('waktu', ascending: false);
-
-      // --- B. DATA OFFLINE (Local DB) ---
       final allOffline = await DatabaseHelper().getTransaksiPending();
 
       List<Map<String, dynamic>> gabungan = [];
 
-      // Filter Data Offline secara Manual (Dart Logic)
       for (var item in allOffline) {
         bool passDate = true;
         bool passDokter = true;
 
-        // Cek Tanggal Offline
         if (_selectedDate != null) {
           final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate!);
           passDate = item['waktu'].toString().substring(0, 10) == dateStr;
         }
 
-        // Cek Dokter Offline
         if (widget.role == 'Admin Gudang') {
           if (_selectedDokterEmail != null &&
               _selectedDokterEmail != 'Semua Dokter') {
@@ -128,14 +106,12 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         }
       }
 
-      // Masukkan Data Online
       for (var item in onlineData) {
         final newItem = Map<String, dynamic>.from(item);
         newItem['status'] = 'online';
         gabungan.add(newItem);
       }
 
-      // Hitung Total
       int total = 0;
       for (var item in gabungan) {
         total += (item['biaya'] as num).toInt();
@@ -153,7 +129,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     }
   }
 
-  // Pop-up Pilih Tanggal
   Future<void> _pickDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -161,25 +136,55 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       helpText: "Pilih Tanggal Laporan",
-      cancelText: "Semua Waktu", // Tombol buat reset filter
+      cancelText: "Semua Waktu",
       confirmText: "Pilih",
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Colors.purple),
-          ),
-          child: child!,
-        );
-      },
     );
-
-    // Logika Reset: Kalau user klik "Semua Waktu" (biasanya cancel), kita null-kan
-    // Tapi karena showDatePicker return null kalau cancel, kita perlu logika tombol khusus
-    // Cara mudah: Kita pakai logika 'picked' biasa. Kalau user mau reset, kita kasih tombol silang di UI.
     if (picked != null) {
       setState(() => _selectedDate = picked);
       _fetchHistory();
     }
+  }
+
+  // --- EXPORT MENU ---
+  void _showExportDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "Export Laporan Keuangan",
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.table_chart, color: Colors.green),
+              title: Text("Download CSV (Excel)", style: GoogleFonts.poppins()),
+              onTap: () {
+                Navigator.pop(context);
+                _exportCsv();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              title: Text("Download PDF (Resmi)", style: GoogleFonts.poppins()),
+              onTap: () {
+                Navigator.pop(context);
+                _exportPdf();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _exportCsv() async {
@@ -196,11 +201,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         "Jam",
         "Dokter",
         "Peternak",
-        "Hewan",
-        "Detail",
-        "Keluhan",
+        "Layanan",
         "Diagnosa",
-        "Tindakan",
         "Biaya",
         "Status",
       ]);
@@ -211,11 +213,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           _formatJam(item['waktu']),
           item['dokter_email'],
           item['nama_peternak'],
-          item['jenis_hewan'],
-          item['detail_hewan'],
-          item['anamnesa'],
-          item['diagnosa'],
           item['jenis_layanan'],
+          item['diagnosa'],
           item['biaya'],
           item['status'],
         ]);
@@ -226,18 +225,137 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       final dateLabel = _selectedDate == null
           ? "Semua_Waktu"
           : DateFormat('yyyy-MM-dd').format(_selectedDate!);
-      final path = "${directory.path}/Laporan_Puskeswan_$dateLabel.csv";
-
+      final path = "${directory.path}/Laporan_Sangu_$dateLabel.csv";
       final file = File(path);
       await file.writeAsString(csvData);
-      await Share.shareXFiles([
-        XFile(path),
-      ], text: 'Laporan Puskeswan ($dateLabel)');
+      await Share.shareXFiles([XFile(path)], text: 'Laporan Keuangan CSV');
     } catch (e) {
       if (mounted)
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text("Gagal Export: $e")));
+        ).showSnackBar(SnackBar(content: Text("Gagal CSV: $e")));
+    }
+  }
+
+  Future<void> _exportPdf() async {
+    if (_allTransaksi.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Data kosong!")));
+      return;
+    }
+    try {
+      final pdf = pw.Document();
+      final dateLabel = _selectedDate == null
+          ? "Semua Waktu"
+          : DateFormat('dd MMMM yyyy', 'id_ID').format(_selectedDate!);
+
+      // FIX TYPE DATA: PASTIKAN List<String>
+      final tableData = <List<String>>[
+        <String>['Tanggal', 'Peternak', 'Layanan', 'Biaya (Rp)'],
+        ..._allTransaksi.map((item) {
+          final date = item['waktu'].toString().substring(0, 10);
+          return [
+            date,
+            item['nama_peternak']?.toString() ?? '-',
+            item['jenis_layanan']?.toString() ?? '-',
+            NumberFormat.currency(
+              locale: 'id_ID',
+              symbol: '',
+              decimalDigits: 0,
+            ).format(item['biaya']),
+          ];
+        }),
+      ];
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return [
+              pw.Header(
+                level: 0,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      "PUSKESWAN TRENGGALEK",
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.Text(
+                      "Laporan Pendapatan Pelayanan",
+                      style: const pw.TextStyle(fontSize: 14),
+                    ),
+                    pw.Text(
+                      "Periode: $dateLabel",
+                      style: const pw.TextStyle(
+                        fontSize: 12,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                    pw.Divider(),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              // FIX DEPRECATED METHOD
+              pw.TableHelper.fromTextArray(
+                context: context,
+                headerStyle: pw.TextStyle(
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.white,
+                ),
+                headerDecoration: const pw.BoxDecoration(
+                  color: PdfColors.purple,
+                ),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(2),
+                  1: const pw.FlexColumnWidth(3),
+                  2: const pw.FlexColumnWidth(3),
+                  3: const pw.FlexColumnWidth(2),
+                },
+                data: tableData,
+              ),
+              pw.SizedBox(height: 20),
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(
+                  "Total Pendapatan: ${_formatRupiah(_totalSangu)}",
+                  style: pw.TextStyle(
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Footer(
+                title: pw.Text(
+                  "Generated by Puskeswan App",
+                  style: const pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColors.grey,
+                  ),
+                ),
+              ),
+            ];
+          },
+        ),
+      );
+
+      final directory = await getTemporaryDirectory();
+      final path = "${directory.path}/Laporan_Sangu.pdf";
+      final file = File(path);
+      await file.writeAsBytes(await pdf.save());
+
+      await Share.shareXFiles([XFile(path)], text: 'Laporan Keuangan PDF');
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Gagal PDF: $e")));
     }
   }
 
@@ -274,18 +392,17 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.download_rounded, color: Colors.purple),
-            onPressed: _exportCsv,
+            onPressed: _showExportDialog,
           ),
         ],
       ),
       body: Column(
         children: [
-          // 1. FILTER AREA
+          // FILTER FILTER AREA
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             child: Column(
               children: [
-                // A. FILTER TANGGAL
                 InkWell(
                   onTap: _pickDate,
                   borderRadius: BorderRadius.circular(12),
@@ -347,8 +464,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     ),
                   ),
                 ),
-
-                // B. FILTER DOKTER (HANYA MUNCUL JIKA ADMIN)
                 if (widget.role == 'Admin Gudang') ...[
                   const SizedBox(height: 10),
                   Container(
@@ -366,20 +481,22 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                           Icons.person_search,
                           color: Colors.purple,
                         ),
-                        items: _dokterList.map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text(
-                              value == 'Semua Dokter'
-                                  ? "Semua Dokter"
-                                  : "Dr. ${value.split('@')[0]}",
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: Colors.purple[900],
+                        items: _dokterList
+                            .map(
+                              (String value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(
+                                  value == 'Semua Dokter'
+                                      ? "Semua Dokter"
+                                      : "Dr. ${value.split('@')[0]}",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: Colors.purple[900],
+                                  ),
+                                ),
                               ),
-                            ),
-                          );
-                        }).toList(),
+                            )
+                            .toList(),
                         onChanged: (newValue) {
                           setState(() => _selectedDokterEmail = newValue);
                           _fetchHistory();
@@ -392,7 +509,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             ),
           ),
 
-          // 2. KARTU SANGU
+          // KARTU TOTAL
           Container(
             width: double.infinity,
             margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
@@ -454,7 +571,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             ),
           ),
 
-          // 3. LIST TRANSAKSI
+          // LIST DATA
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -474,7 +591,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     itemBuilder: (context, index) {
                       final item = _allTransaksi[index];
                       final isOffline = item['status'] == 'offline';
-
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
                         padding: const EdgeInsets.all(16),

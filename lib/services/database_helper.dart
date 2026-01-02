@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show kIsWeb; // <--- INI KUNCINYA
+import 'dart:io'; // PENTING: Buat cek Platform
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -11,8 +12,11 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   Future<Database?> get database async {
-    // KALAU DI WEB, KITA "MATIKAN" DATABASE LOKALNYA
-    if (kIsWeb) return null;
+    // REVISI: Matikan DB Lokal kalau Web ATAU Linux/Windows/Mac
+    // Biar gak error "MissingPlugin" pas develop di PC
+    if (kIsWeb || Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+      return null;
+    }
 
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -20,7 +24,8 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    String path = join(await getDatabasesPath(), 'puskeswan_local_v4.db');
+    // Naikkan versi jadi v6 biar aman
+    String path = join(await getDatabasesPath(), 'puskeswan_local_v6.db');
     return await openDatabase(
       path,
       version: 1,
@@ -35,7 +40,14 @@ class DatabaseHelper {
             jumlah_hewan INTEGER,
             anamnesa TEXT,
             diagnosa TEXT,
-            jenis_layanan TEXT,
+            jenis_layanan TEXT, 
+            kategori_layanan TEXT, 
+            kode_straw TEXT,
+            obat_1 TEXT,
+            obat_2 TEXT,
+            obat_3 TEXT,
+            obat_4 TEXT,
+            obat_5 TEXT,
             biaya INTEGER,
             waktu TEXT
           )
@@ -44,23 +56,33 @@ class DatabaseHelper {
     );
   }
 
-  // SEMUA FUNGSI DI BAWAH DIKASIH REM 'kIsWeb'
+  // --- CEK PLATFORM DI SEMUA FUNGSI ---
+
   Future<int> insertTransaksi(Map<String, dynamic> row) async {
-    if (kIsWeb) return 0;
+    if (kIsWeb || Platform.isLinux || Platform.isWindows || Platform.isMacOS)
+      return 0;
+
     Database? db = await database;
-    return await db!.insert('transaksi_pending', row);
+    if (db == null) return 0;
+    return await db.insert('transaksi_pending', row);
   }
 
   Future<List<Map<String, dynamic>>> getTransaksiPending() async {
-    if (kIsWeb) return [];
+    if (kIsWeb || Platform.isLinux || Platform.isWindows || Platform.isMacOS)
+      return [];
+
     Database? db = await database;
-    return await db!.query('transaksi_pending');
+    if (db == null) return [];
+    return await db.query('transaksi_pending');
   }
 
   Future<int> deleteTransaksi(int id) async {
-    if (kIsWeb) return 0;
+    if (kIsWeb || Platform.isLinux || Platform.isWindows || Platform.isMacOS)
+      return 0;
+
     Database? db = await database;
-    return await db!.delete(
+    if (db == null) return 0;
+    return await db.delete(
       'transaksi_pending',
       where: 'id = ?',
       whereArgs: [id],
@@ -68,9 +90,12 @@ class DatabaseHelper {
   }
 
   Future<int> countPending() async {
-    if (kIsWeb) return 0;
+    if (kIsWeb || Platform.isLinux || Platform.isWindows || Platform.isMacOS)
+      return 0;
+
     Database? db = await database;
-    var result = await db!.rawQuery('SELECT COUNT(*) FROM transaksi_pending');
+    if (db == null) return 0;
+    var result = await db.rawQuery('SELECT COUNT(*) FROM transaksi_pending');
     return Sqflite.firstIntValue(result) ?? 0;
   }
 }
