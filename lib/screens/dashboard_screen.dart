@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/database_helper.dart';
@@ -9,7 +10,7 @@ import 'gudang_screen.dart';
 import 'input_pelayanan.dart';
 import 'invoice_screen.dart';
 import 'data_peternak_screen.dart';
-import 'about_screen.dart';
+import 'about_screen.dart'; // <--- INI HALAMAN PROFIL
 
 class DashboardScreen extends StatefulWidget {
   final String role;
@@ -24,6 +25,11 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _pendingDataCount = 0;
   bool _isSyncing = false;
+  int _selectedIndex = 0;
+
+  // Dummy Statistik (Bisa diganti real data nanti)
+  int _totalPasien = 0;
+  int _pendapatanHariIni = 0;
 
   @override
   void initState() {
@@ -37,317 +43,382 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _checkPendingData() async {
     final count = await DatabaseHelper().countPending();
-    if (mounted) {
-      setState(() {
-        _pendingDataCount = count;
-      });
-    }
+    if (mounted) setState(() => _pendingDataCount = count);
   }
 
   Future<void> _syncNow() async {
     final connectivityResult = await (Connectivity().checkConnectivity());
-    if (connectivityResult.contains(ConnectivityResult.none)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Masih gak ada sinyal Mas! Cari wifi dulu."),
-          ),
-        );
-      }
-      return;
-    }
+    if (connectivityResult.contains(ConnectivityResult.none)) return;
 
     setState(() => _isSyncing = true);
-
     try {
       final db = DatabaseHelper();
       final pendingList = await db.getTransaksiPending();
-
-      int successCount = 0;
-
       for (var item in pendingList) {
         final dataToUpload = Map<String, dynamic>.from(item);
         dataToUpload.remove('id');
-
         await Supabase.instance.client.from('pelayanan').insert(dataToUpload);
-
         await db.deleteTransaksi(item['id']);
-        successCount++;
       }
-
-      if (mounted) {
+      _checkPendingData();
+      if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Sukses! $successCount data berhasil di-upload ke Cloud ☁️",
-            ),
+          const SnackBar(
+            content: Text("Sync Berhasil!"),
             backgroundColor: Colors.green,
           ),
         );
-      }
-
-      _checkPendingData();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Gagal Sync: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      // Error handling
     } finally {
       if (mounted) setState(() => _isSyncing = false);
     }
   }
 
-  Future<void> _logout(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Konfirmasi Logout"),
-        content: const Text("Yakin ingin keluar dari aplikasi?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Batal"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text("Keluar"),
-          ),
-        ],
-      ),
-    );
+  Future<void> _logout() async {
+    await Supabase.instance.client.auth.signOut();
+    if (mounted)
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+  }
 
-    if (confirm == true) {
-      await Supabase.instance.client.auth.signOut();
-      if (context.mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
-      }
+  // --- NAVIGASI BAWAH (LOGIKA BARU) ---
+  void _onItemTapped(int index) {
+    if (index == 0) {
+      // HOME (Tetap di sini)
+      setState(() => _selectedIndex = 0);
+    } else if (index == 1) {
+      // ABOUT (Munculin Modal Info)
+      setState(() => _selectedIndex = 1);
+      _showSimpleAboutDialog();
+    } else if (index == 2) {
+      // PROFILE (Pindah ke Screen Profil)
+      setState(() => _selectedIndex = 2);
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const AboutScreen()),
+      ).then((_) {
+        // Pas balik dari profil, reset indikator ke Home lagi (Opsional, biar UX enak)
+        setState(() => _selectedIndex = 0);
+      });
     }
   }
+
+  void _showSimpleAboutDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.info_outline, size: 50, color: Colors.purple),
+            const SizedBox(height: 16),
+            Text(
+              "Puskeswan Mobile v1.0",
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Aplikasi Manajemen Pelayanan Kesehatan Hewan",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              "© 2026 Vixel Creative",
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                color: Colors.purple,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  // ------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.purple[50],
+      backgroundColor: Colors.white,
+
+      // APP BAR
       appBar: AppBar(
-        title: const Text(
-          "Puskeswan Trenggalek",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.purple[800],
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
         elevation: 0,
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.purple[50],
+              child: Text(
+                widget.nama.isNotEmpty ? widget.nama[0].toUpperCase() : "U",
+                style: const TextStyle(
+                  color: Colors.purple,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Halo, ${widget.nama}",
+                  style: GoogleFonts.poppins(
+                    color: Colors.black,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  widget.role,
+                  style: GoogleFonts.poppins(color: Colors.grey, fontSize: 10),
+                ),
+              ],
+            ),
+          ],
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline),
-            tooltip: "Tentang Aplikasi",
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AboutScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: "Keluar",
-            onPressed: () => _logout(context),
+            onPressed: _logout,
+            icon: const Icon(Icons.logout, color: Colors.grey),
+            tooltip: "Logout",
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // HEADER PROFIL
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 10, 24, 30),
-            decoration: BoxDecoration(
-              color: Colors.purple[800],
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.white,
-                  child: Text(
-                    widget.nama.isNotEmpty ? widget.nama[0].toUpperCase() : "P",
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.purple[800],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Selamat Bertugas,",
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.nama,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          widget.role,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
 
-          // --- AREA NOTIFIKASI SYNC (FIXED: Colors.orange[900]) ---
-          if (_pendingDataCount > 0)
+      // BODY
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // BANNER
             Container(
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.orange[100],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange),
+                color: const Color(0xFFF3E5F5),
+                borderRadius: BorderRadius.circular(24),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.cloud_off, color: Colors.orange),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "$_pendingDataCount Data Belum Upload",
-                          // FIX DISINI: Hapus const dan pakai [900]
-                          style: TextStyle(
+                          "Puskeswan\nTrenggalek",
+                          style: GoogleFonts.poppins(
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Colors.orange[900],
+                            color: const Color(0xFF4A148C),
                           ),
                         ),
-                        const Text(
-                          "Segera upload saat ada sinyal.",
-                          style: TextStyle(fontSize: 12, color: Colors.brown),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Kelola data kesehatan hewan dengan mudah.",
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: const Color(0xFF7B1FA2),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            // Shortcut ke Input Pelayanan
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const InputPelayananScreen(),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7B1FA2),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 0,
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            "Mulai",
+                            style: TextStyle(fontSize: 12),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  _isSyncing
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : ElevatedButton(
-                          onPressed: _syncNow,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                          child: const Text("Upload"),
-                        ),
+                  Icon(
+                    Icons.pets,
+                    size: 80,
+                    color: Colors.purple.withOpacity(0.2),
+                  ),
                 ],
               ),
             ),
 
-          // GRID MENU UTAMA
-          Expanded(
-            child: GridView.count(
-              padding: const EdgeInsets.all(24),
+            const SizedBox(height: 24),
+
+            // ALERT SYNC
+            if (_pendingDataCount > 0)
+              InkWell(
+                onTap: _syncNow,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      _isSyncing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.orange,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.cloud_upload,
+                              color: Colors.orange,
+                            ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "$_pendingDataCount Data Offline",
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange[900],
+                          ),
+                        ),
+                      ),
+                      const Text(
+                        "Upload",
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // MENU TITLE
+            Text(
+              "Layanan Utama",
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // MENU GRID
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: 2,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
+              childAspectRatio: 1.2,
               children: [
-                _buildMenuCard(
+                _buildUizardCard(
                   context,
                   "Stok Gudang",
-                  Icons.warehouse,
-                  Colors.orange,
+                  Icons.inventory_2_rounded,
+                  Colors.blue,
                   GudangScreen(role: widget.role),
                 ),
-                _buildMenuCard(
+                _buildUizardCard(
                   context,
                   "Data Peternak",
-                  Icons.people,
-                  Colors.blue,
+                  Icons.people_alt_rounded,
+                  Colors.orange,
                   DataPeternakScreen(role: widget.role),
                 ),
-                _buildMenuCard(
+                _buildUizardCard(
                   context,
                   "Input Pelayanan",
-                  Icons.pets,
+                  Icons.add_circle_rounded,
                   Colors.purple,
                   const InputPelayananScreen(),
+                  isPrimary: true,
                   needRefresh: true,
                 ),
-                _buildMenuCard(
+                _buildUizardCard(
                   context,
-                  "Invoice Sangu",
-                  Icons.attach_money,
+                  "Invoice",
+                  Icons.receipt_long_rounded,
                   Colors.green,
                   InvoiceScreen(role: widget.role),
                 ),
               ],
             ),
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+
+      // 3. BOTTOM NAVIGATION BAR (YANG TADI MATI SURI)
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: Colors.white,
+        selectedItemColor: const Color(0xFF7B1FA2),
+        unselectedItemColor: Colors.grey[400],
+        showUnselectedLabels: false,
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped, // <--- Panggil Fungsi Baru Tadi
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_rounded),
+            label: "Home",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.info_outline_rounded),
+            label: "About",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_rounded),
+            label: "Profile",
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMenuCard(
+  Widget _buildUizardCard(
     BuildContext context,
     String title,
     IconData icon,
     Color color,
     Widget page, {
+    bool isPrimary = false,
     bool needRefresh = false,
   }) {
     return InkWell(
@@ -356,34 +427,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
           context,
           MaterialPageRoute(builder: (context) => page),
         );
-        if (needRefresh) {
-          _refreshDashboard();
-        }
+        if (needRefresh) _refreshDashboard();
       },
-      borderRadius: BorderRadius.circular(20),
-      child: Card(
-        elevation: 4,
-        shadowColor: color.withValues(alpha: 0.4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isPrimary ? color.withOpacity(0.1) : Colors.grey[50],
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.grey.withOpacity(0.1)),
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
+                color: Colors.white,
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: Icon(icon, size: 36, color: color),
+              child: Icon(icon, color: color, size: 28),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: Colors.grey[800],
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
               ),
             ),
           ],

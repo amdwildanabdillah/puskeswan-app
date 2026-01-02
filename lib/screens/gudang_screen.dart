@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class GudangScreen extends StatefulWidget {
-  final String role; // Biar tau siapa yang ngambil
+  final String role;
   const GudangScreen({super.key, required this.role});
 
   @override
@@ -11,10 +12,11 @@ class GudangScreen extends StatefulWidget {
 
 class _GudangScreenState extends State<GudangScreen> {
   final _supabase = Supabase.instance.client;
+  final _searchController = TextEditingController();
+
   List<Map<String, dynamic>> _barangList = [];
   List<Map<String, dynamic>> _filteredList = [];
   bool _isLoading = true;
-  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -22,7 +24,6 @@ class _GudangScreenState extends State<GudangScreen> {
     _fetchBarang();
   }
 
-  // 1. Ambil Data Barang
   Future<void> _fetchBarang() async {
     try {
       final data = await _supabase
@@ -30,252 +31,431 @@ class _GudangScreenState extends State<GudangScreen> {
           .select()
           .order('nama_barang', ascending: true);
 
-      setState(() {
-        _barangList = List<Map<String, dynamic>>.from(data);
-        _filteredList = _barangList;
-        _isLoading = false;
-      });
-    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        setState(() {
+          _barangList = List<Map<String, dynamic>>.from(data);
+          _filteredList = _barangList;
+          _isLoading = false;
+        });
       }
+    } catch (e) {
+      // Silent error
     }
   }
 
-  // 2. Fungsi Cari Barang
   void _filterBarang(String query) {
     setState(() {
-      _filteredList = _barangList
-          .where(
-            (item) => item['nama_barang'].toString().toLowerCase().contains(
-              query.toLowerCase(),
-            ),
-          )
-          .toList();
+      _filteredList = _barangList.where((item) {
+        final nama = item['nama_barang'].toString().toLowerCase();
+        return nama.contains(query.toLowerCase());
+      }).toList();
     });
   }
 
-  // 3. Fungsi Update Stok (Ambil / Tambah)
-  Future<void> _updateStok(
-    String id,
-    int stokLama,
-    int jumlahUbah,
-    bool isPengurangan,
-  ) async {
-    final int stokBaru = isPengurangan
-        ? (stokLama - jumlahUbah)
-        : (stokLama + jumlahUbah);
+  // --- LOGIKA UPDATE STOK (BARU) ---
+  Future<void> _updateStok(Map<String, dynamic> item, String tipe) async {
+    // Tipe: 'masuk' atau 'keluar'
+    final qtyController = TextEditingController();
 
-    if (stokBaru < 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Stok tidak cukup!")));
-      return;
-    }
-
-    try {
-      // Update Database
-      await _supabase.from('barang').update({'stok': stokBaru}).eq('id', id);
-
-      // Refresh Data UI
-      await _fetchBarang();
-      if (mounted) Navigator.pop(context); // Tutup Dialog
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isPengurangan
-                ? "Barang berhasil diambil"
-                : "Stok berhasil ditambah",
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Gagal update: $e")));
-    }
-  }
-
-  // 4. Dialog Pop-up Menu
-  void _showStokDialog(Map<String, dynamic> item) {
-    final stokController = TextEditingController();
-    showDialog(
+    await showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(
-            item['nama_barang'],
-            style: TextStyle(
-              color: Colors.purple[800],
-              fontWeight: FontWeight.bold,
-            ),
+      builder: (context) => AlertDialog(
+        title: Text(
+          tipe == 'masuk' ? "Barang Masuk (+)" : "Ambil Barang (-)",
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            color: tipe == 'masuk' ? Colors.green : Colors.red,
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                "Sisa Stok Saat Ini: ${item['stok']} ${item['satuan'] ?? 'Unit'}",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: stokController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: "Jumlah",
-                  border: OutlineInputBorder(),
-                  hintText: "0",
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "Stok saat ini: ${item['stok']} ${item['satuan']}",
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: qtyController,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: "Jumlah",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            // TOMBOL TAMBAH (RESTOCK)
-            TextButton.icon(
-              onPressed: () {
-                final int? jml = int.tryParse(stokController.text);
-                if (jml != null && jml > 0)
-                  _updateStok(item['id'].toString(), item['stok'], jml, false);
-              },
-              icon: const Icon(Icons.add_circle, color: Colors.green),
-              label: const Text(
-                "Restock (+)",
-                style: TextStyle(color: Colors.green),
-              ),
-            ),
-
-            // TOMBOL AMBIL (BARANG KELUAR)
-            ElevatedButton.icon(
-              onPressed: () {
-                final int? jml = int.tryParse(stokController.text);
-                if (jml != null && jml > 0)
-                  _updateStok(item['id'].toString(), item['stok'], jml, true);
-              },
-              icon: const Icon(Icons.remove_circle),
-              label: const Text("Ambil (-)"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
+                suffixText: item['satuan'],
               ),
             ),
           ],
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              int qty = int.tryParse(qtyController.text) ?? 0;
+              if (qty <= 0) return;
+
+              int stokBaru = item['stok'];
+              if (tipe == 'masuk') {
+                stokBaru += qty;
+              } else {
+                if (qty > stokBaru) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Stok tidak cukup!")),
+                  );
+                  return;
+                }
+                stokBaru -= qty;
+              }
+
+              // Update ke Database
+              await _supabase
+                  .from('barang')
+                  .update({'stok': stokBaru})
+                  .eq('id', item['id']);
+
+              if (mounted) {
+                Navigator.pop(context);
+                _fetchBarang(); // Refresh UI
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      tipe == 'masuk'
+                          ? "Stok bertambah! 📈"
+                          : "Barang berhasil diambil! 📉",
+                    ),
+                    backgroundColor: tipe == 'masuk'
+                        ? Colors.green
+                        : Colors.orange,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: tipe == 'masuk' ? Colors.green : Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(tipe == 'masuk' ? "Tambah" : "Ambil"),
+          ),
+        ],
+      ),
     );
+  }
+
+  // Dialog Edit Data Barang (Full)
+  Future<void> _showFormDialog({Map<String, dynamic>? item}) async {
+    final namaController = TextEditingController(
+      text: item?['nama_barang'] ?? '',
+    );
+    final stokController = TextEditingController(
+      text: item?['stok']?.toString() ?? '0',
+    );
+    final satuanController = TextEditingController(
+      text: item?['satuan'] ?? 'Pcs',
+    );
+    final kategoriController = TextEditingController(
+      text: item?['kategori'] ?? 'Obat',
+    );
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          item == null ? "Tambah Barang Baru" : "Edit Data Barang",
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTextField(namaController, "Nama Barang"),
+              const SizedBox(height: 10),
+              // Kalau edit, stok dikunci biar ga dipake buat transaksi (pake tombol + - aja)
+              _buildTextField(
+                stokController,
+                "Stok Awal",
+                isNumber: true,
+                isEnabled: item == null,
+              ),
+              const SizedBox(height: 10),
+              _buildTextField(satuanController, "Satuan (Botol/Pcs/Box)"),
+              const SizedBox(height: 10),
+              _buildTextField(
+                kategoriController,
+                "Kategori (Obat/Alat/Vaksin)",
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final data = {
+                'nama_barang': namaController.text,
+                'stok': int.tryParse(stokController.text) ?? 0,
+                'satuan': satuanController.text,
+                'kategori': kategoriController.text,
+              };
+
+              if (item == null) {
+                await _supabase.from('barang').insert(data);
+              } else {
+                // Update detail (tanpa stok kalau mode edit)
+                final updateData = Map<String, dynamic>.from(data);
+                if (item != null)
+                  updateData.remove(
+                    'stok',
+                  ); // Stok lewat fitur Masuk/Keluar aja biar aman
+
+                await _supabase
+                    .from('barang')
+                    .update(updateData)
+                    .eq('id', item['id']);
+              }
+              if (mounted) {
+                Navigator.pop(context);
+                _fetchBarang();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Simpan"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteBarang(int id) async {
+    await _supabase.from('barang').delete().eq('id', id);
+    _fetchBarang();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.purple[50], // Tema Ungu
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Stok Gudang"),
-        backgroundColor: Colors.purple[800],
-        foregroundColor: Colors.white,
+        title: Text(
+          "Stok Gudang",
+          style: GoogleFonts.poppins(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Column(
         children: [
-          // SEARCH BAR
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.purple[800],
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(20),
-                bottomRight: Radius.circular(20),
-              ),
-            ),
+          Padding(
+            padding: const EdgeInsets.all(20),
             child: TextField(
               controller: _searchController,
               onChanged: _filterBarang,
               decoration: InputDecoration(
-                hintText: "Cari Obat / Barang...",
+                hintText: "Cari obat, vaksin, atau alat...",
+                hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
                 prefixIcon: const Icon(Icons.search, color: Colors.purple),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: Colors.grey[100],
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 0,
-                  horizontal: 20,
-                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
           ),
 
-          // LIST BARANG
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredList.isEmpty
-                ? const Center(child: Text("Barang tidak ditemukan"))
+                ? Center(
+                    child: Text(
+                      "Barang tidak ditemukan",
+                      style: GoogleFonts.poppins(color: Colors.grey),
+                    ),
+                  )
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     itemCount: _filteredList.length,
                     itemBuilder: (context, index) {
                       final item = _filteredList[index];
                       final stok = item['stok'] ?? 0;
-                      final isCritical = stok < 10; // Merah kalau stok tipis
+                      final isLowStock = stok < 10;
 
-                      return Card(
-                        elevation: 3,
+                      return Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey[100]!),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          leading: CircleAvatar(
-                            backgroundColor: isCritical
-                                ? Colors.red[100]
-                                : Colors.green[100],
-                            child: Icon(
-                              isCritical ? Icons.warning : Icons.inventory_2,
-                              color: isCritical ? Colors.red : Colors.green,
-                            ),
-                          ),
-                          title: Text(
-                            item['nama_barang'],
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          subtitle: Text("${item['kategori'] ?? 'Umum'}"),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                "$stok ${item['satuan'] ?? ''}",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: isCritical
-                                      ? Colors.red
-                                      : Colors.purple[900],
-                                ),
+                        child: Row(
+                          children: [
+                            // ICON BARANG
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isLowStock
+                                    ? Colors.red[50]
+                                    : Colors.green[50],
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              if (isCritical)
-                                const Text(
-                                  "Stok Menipis!",
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.red,
+                              child: Icon(
+                                Icons.inventory_2_outlined,
+                                color: isLowStock ? Colors.red : Colors.green,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+
+                            // NAMA & KATEGORI
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item['nama_barang'],
+                                    style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  Text(
+                                    "${item['kategori']} • ${item['satuan']}",
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            // --- BAGIAN STOK & TOMBOL AKSI (BARU) ---
+                            Row(
+                              children: [
+                                // Tombol AMBIL (-)
+                                InkWell(
+                                  onTap: () => _updateStok(item, 'keluar'),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red[50],
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.remove,
+                                      size: 16,
+                                      color: Colors.red,
+                                    ),
                                   ),
                                 ),
-                            ],
-                          ),
-                          onTap: () => _showStokDialog(item),
+
+                                // Angka Stok
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: Text(
+                                    "$stok",
+                                    style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: isLowStock
+                                          ? Colors.red
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ),
+
+                                // Tombol MASUK (+)
+                                InkWell(
+                                  onTap: () => _updateStok(item, 'masuk'),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green[50],
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.add,
+                                      size: 16,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // MENU Edit/Hapus
+                            PopupMenuButton(
+                              icon: const Icon(
+                                Icons.more_vert,
+                                color: Colors.grey,
+                                size: 20,
+                              ),
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit, size: 16),
+                                      SizedBox(width: 8),
+                                      Text("Edit Info"),
+                                    ],
+                                  ),
+                                ),
+                                if (widget.role ==
+                                    'Admin Gudang') // Cuma admin yang boleh hapus
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.delete,
+                                          size: 16,
+                                          color: Colors.red,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          "Hapus",
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                              onSelected: (value) {
+                                if (value == 'edit')
+                                  _showFormDialog(item: item);
+                                if (value == 'delete')
+                                  _deleteBarang(item['id']);
+                              },
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -283,17 +463,40 @@ class _GudangScreenState extends State<GudangScreen> {
           ),
         ],
       ),
-      // TOMBOL TAMBAH BARANG BARU (Cuma buat Admin Gudang biasanya)
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Fitur Tambah Item Baru belum dibuat"),
-            ),
-          );
-        },
-        backgroundColor: Colors.purple[800],
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showFormDialog(),
+        backgroundColor: Colors.purple,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text(
+          "Barang Baru",
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label, {
+    bool isNumber = false,
+    bool isEnabled = true,
+  }) {
+    return TextField(
+      controller: controller,
+      enabled: isEnabled,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(
+        labelText: label,
+        filled: !isEnabled,
+        fillColor: !isEnabled ? Colors.grey[200] : null,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
       ),
     );
   }

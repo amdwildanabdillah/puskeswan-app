@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
   file_saver
   printing
+  share_plus
   url_launcher_windows
 )
 
