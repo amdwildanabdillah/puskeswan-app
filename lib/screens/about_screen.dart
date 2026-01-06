@@ -253,7 +253,7 @@ class _AboutScreenState extends State<AboutScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                "Puskeswan Trenggalek",
+                "Puskeswan Trenggalek Mobile",
                 style: GoogleFonts.poppins(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -392,7 +392,7 @@ class _AboutScreenState extends State<AboutScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            "Ahmad Wildan - Lead Architect",
+                            "Ahmad Wildan Abdillah - Techpreneur & Founder",
                             style: GoogleFonts.poppins(
                               color: Colors.white,
                               fontSize: 12,

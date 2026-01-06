@@ -131,7 +131,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const Icon(Icons.info_outline, size: 50, color: Colors.purple),
             const SizedBox(height: 16),
             Text(
-              "Puskeswan Mobile v1.0",
+              "Puskeswan Trenggalek Mobile v1.0",
               style: GoogleFonts.poppins(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,

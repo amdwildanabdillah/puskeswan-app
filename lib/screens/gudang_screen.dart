@@ -25,11 +25,12 @@ class _GudangScreenState extends State<GudangScreen> {
 
   Future<void> _fetchBarang() async {
     try {
+      // Ambil semua barang tanpa filter jenis, biar gudang tetap lengkap
       final data = await _supabase.from('barang').select().order('nama_barang');
       if (mounted) {
         setState(() {
           _barangList = List<Map<String, dynamic>>.from(data);
-          _filteredList = _barangList;
+          _filteredList = _barangList; // Awalnya tampilkan semua
           _isLoading = false;
         });
       }
@@ -50,7 +51,7 @@ class _GudangScreenState extends State<GudangScreen> {
     });
   }
 
-  // --- POPUP TRANSAKSI STOK (MASUK/KELUAR + PIC) ---
+  // --- POPUP TRANSAKSI STOK (MASUK/KELUAR) ---
   Future<void> _showStokDialog(Map<String, dynamic> item, bool isMasuk) async {
     final qtyController = TextEditingController();
     final picController = TextEditingController();
@@ -115,7 +116,6 @@ class _GudangScreenState extends State<GudangScreen> {
               int qty = int.tryParse(qtyController.text) ?? 0;
               if (qty <= 0) return;
 
-              // Cek stok cukup gak kalau keluar
               if (!isMasuk && qty > item['stok']) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Stok tidak cukup!")),
@@ -127,16 +127,17 @@ class _GudangScreenState extends State<GudangScreen> {
               setState(() => _isLoading = true);
 
               try {
-                // 1. Update Stok di Tabel Barang
                 int stokBaru = isMasuk
                     ? (item['stok'] + qty)
                     : (item['stok'] - qty);
+
+                // 1. Update Stok Barang
                 await _supabase
                     .from('barang')
                     .update({'stok': stokBaru})
                     .eq('id', item['id']);
 
-                // 2. Catat di Riwayat (Log) - Pastikan tabel riwayat_stok sudah dibuat di SQL Supabase
+                // 2. Catat Riwayat (Opsional, silent fail kalau tabel belum ada)
                 try {
                   await _supabase.from('riwayat_stok').insert({
                     'barang_id': item['id'],
@@ -145,9 +146,7 @@ class _GudangScreenState extends State<GudangScreen> {
                     'pic_nama': picController.text,
                     'waktu': DateTime.now().toIso8601String(),
                   });
-                } catch (e) {
-                  // Silent fail kalau tabel log belum ada, yang penting stok update
-                }
+                } catch (_) {}
 
                 await _fetchBarang();
                 if (mounted)
@@ -178,54 +177,107 @@ class _GudangScreenState extends State<GudangScreen> {
     );
   }
 
-  // --- POPUP TAMBAH BARANG BARU ---
+  // --- POPUP TAMBAH BARANG BARU (REVISI: ADA JENIS) ---
   Future<void> _showAddBarangDialog() async {
     final namaCtrl = TextEditingController();
     final stokCtrl = TextEditingController();
     final satuanCtrl = TextEditingController();
 
+    // Default jenis
+    String selectedJenis = 'Obat';
+    final List<String> jenisOptions = ['Obat', 'Pakan', 'Alkes', 'Lainnya'];
+
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          "Barang Baru",
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: namaCtrl,
-              decoration: const InputDecoration(labelText: "Nama Barang"),
+      builder: (context) => StatefulBuilder(
+        // Pakai StatefulBuilder biar dropdown bisa ganti value
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: Text(
+              "Barang Baru",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
             ),
-            TextField(
-              controller: stokCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: "Stok Awal"),
-            ),
-            TextField(
-              controller: satuanCtrl,
-              decoration: const InputDecoration(
-                labelText: "Satuan (Botol/Pcs)",
+            content: SingleChildScrollView(
+              // Biar gak overflow di HP kecil
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: namaCtrl,
+                    decoration: const InputDecoration(labelText: "Nama Barang"),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // REVISI: DROPDOWN JENIS BARANG
+                  DropdownButtonFormField<String>(
+                    value: selectedJenis,
+                    decoration: const InputDecoration(
+                      labelText: "Jenis Barang",
+                    ),
+                    items: jenisOptions
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: (val) {
+                      setStateDialog(() => selectedJenis = val!);
+                    },
+                  ),
+
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: stokCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: "Stok Awal"),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: satuanCtrl,
+                    decoration: const InputDecoration(
+                      labelText: "Satuan (Botol/Pcs/Zak)",
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () async {
-              if (namaCtrl.text.isEmpty) return;
-              await _supabase.from('barang').insert({
-                'nama_barang': namaCtrl.text,
-                'stok': int.tryParse(stokCtrl.text) ?? 0,
-                'satuan': satuanCtrl.text,
-              });
-              Navigator.pop(context);
-              _fetchBarang();
-            },
-            child: const Text("Simpan"),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Batal"),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (namaCtrl.text.isEmpty) return;
+
+                  try {
+                    await _supabase.from('barang').insert({
+                      'nama_barang': namaCtrl.text,
+                      'jenis': selectedJenis, // Simpan jenis ke DB
+                      'stok': int.tryParse(stokCtrl.text) ?? 0,
+                      'satuan': satuanCtrl.text,
+                    });
+
+                    Navigator.pop(context);
+                    _fetchBarang(); // Refresh list gudang
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Barang baru berhasil ditambahkan!"),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Gagal tambah: $e"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                child: const Text("Simpan"),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -254,7 +306,7 @@ class _GudangScreenState extends State<GudangScreen> {
               controller: _searchController,
               onChanged: _filterBarang,
               decoration: InputDecoration(
-                hintText: "Cari obat/alkes...",
+                hintText: "Cari barang...",
                 prefixIcon: const Icon(Icons.search, color: Colors.blue),
                 filled: true,
                 fillColor: Colors.grey[100],
@@ -274,6 +326,7 @@ class _GudangScreenState extends State<GudangScreen> {
                     itemBuilder: (context, index) {
                       final item = _filteredList[index];
                       final stok = item['stok'] as int;
+                      final jenis = item['jenis'] ?? '-';
                       final isLow = stok < 5;
 
                       return Container(
@@ -293,12 +346,24 @@ class _GudangScreenState extends State<GudangScreen> {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: isLow ? Colors.red[50] : Colors.blue[50],
+                                color: isLow
+                                    ? Colors.red[50]
+                                    : (jenis == 'Obat'
+                                          ? Colors.blue[50]
+                                          : Colors.orange[50]),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(
-                                Icons.inventory_2,
-                                color: isLow ? Colors.red : Colors.blue,
+                                jenis == 'Obat'
+                                    ? Icons.medication
+                                    : (jenis == 'Pakan'
+                                          ? Icons.grass
+                                          : Icons.inventory_2),
+                                color: isLow
+                                    ? Colors.red
+                                    : (jenis == 'Obat'
+                                          ? Colors.blue
+                                          : Colors.orange),
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -312,19 +377,46 @@ class _GudangScreenState extends State<GudangScreen> {
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  Text(
-                                    "$stok ${item['satuan'] ?? 'Pcs'}",
-                                    style: GoogleFonts.poppins(
-                                      color: isLow ? Colors.red : Colors.grey,
-                                      fontWeight: isLow
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
+                                  const SizedBox(height: 4),
+                                  // Tampilkan Jenis & Stok
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[200],
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          jenis,
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        "$stok ${item['satuan'] ?? 'Pcs'}",
+                                        style: GoogleFonts.poppins(
+                                          color: isLow
+                                              ? Colors.red
+                                              : Colors.grey,
+                                          fontWeight: isLow
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
-                            // TOMBOL KURANG (AMBIL)
                             IconButton(
                               icon: const Icon(
                                 Icons.remove_circle_outline,
@@ -332,7 +424,6 @@ class _GudangScreenState extends State<GudangScreen> {
                               ),
                               onPressed: () => _showStokDialog(item, false),
                             ),
-                            // TOMBOL TAMBAH (RESTOCK)
                             IconButton(
                               icon: const Icon(
                                 Icons.add_circle_outline,
@@ -350,7 +441,7 @@ class _GudangScreenState extends State<GudangScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddBarangDialog,
-        backgroundColor: Colors.blue,
+        backgroundColor: const Color.fromARGB(255, 149, 33, 243),
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );

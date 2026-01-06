@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 class DetailPeternakScreen extends StatefulWidget {
-  final Map<String, dynamic> peternak; // Data peternak dari halaman sebelumnya
+  final Map<String, dynamic> peternak;
   const DetailPeternakScreen({super.key, required this.peternak});
 
   @override
@@ -20,56 +20,34 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
   List<Map<String, dynamic>> _listRiwayat = [];
   bool _isLoading = true;
 
-  // Master Data Lokal buat Dropdown Hewan
-  List<String> _bangsaList = [
-    'Limosin',
-    'Simental',
-    'PO',
-    'Brahman',
-    'Jawa',
-    'PE',
-    'Senduro',
-  ];
+  // List Master Data (Sama kayak di Input Pelayanan)
+  List<String> _jenisList = ['Sapi', 'Kambing', 'Domba'];
+  List<String> _bangsaList = ['Limosin', 'Simental', 'PO', 'Brahman', 'Jawa'];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _fetchDetailData();
-    _fetchMasterBangsa(); // Cek kalau ada bangsa baru di server
-  }
-
-  Future<void> _fetchMasterBangsa() async {
-    try {
-      final data = await _supabase.from('master_bangsa').select('nama_bangsa');
-      if (mounted) {
-        setState(() {
-          final serverList = List<String>.from(
-            data.map((e) => e['nama_bangsa']),
-          );
-          _bangsaList = {..._bangsaList, ...serverList}.toList();
-        });
-      }
-    } catch (e) {}
   }
 
   Future<void> _fetchDetailData() async {
     try {
       final peternakId = widget.peternak['id'];
-      final peternakNama = widget.peternak['nama'];
 
-      // 1. AMBIL DATA HEWAN
+      // 1. AMBIL HEWAN (FILTER STATUS 'Aktif')
       final dataHewan = await _supabase
           .from('hewan')
           .select()
           .eq('peternak_id', peternakId)
+          .eq('status', 'Aktif')
           .order('created_at', ascending: false);
 
-      // 2. AMBIL RIWAYAT PELAYANAN
+      // 2. AMBIL RIWAYAT
       final dataRiwayat = await _supabase
           .from('pelayanan')
           .select()
-          .eq('nama_peternak', peternakNama)
+          .eq('nama_peternak', widget.peternak['nama'])
           .order('waktu', ascending: false);
 
       if (mounted) {
@@ -84,25 +62,57 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
     }
   }
 
-  // --- POPUP TAMBAH HEWAN (KHUSUS PETERNAK INI) ---
+  // --- POPUP KECIL BUAT NAMBAH TEXT MANUAL (DIAGNOSA/RAS) ---
+  Future<void> _showTextInputDialog(
+    String title,
+    Function(String) onSave,
+  ) async {
+    final txtCtrl = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          title,
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: txtCtrl,
+          decoration: _inputDecor("Ketik nama baru..."),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              if (txtCtrl.text.isNotEmpty) {
+                onSave(txtCtrl.text);
+                Navigator.pop(ctx);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Simpan"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- ADD HEWAN DIALOG (VERSI SINKRON DENGAN INPUT PELAYANAN) ---
   Future<void> _showAddHewanDialog() async {
-    String? jenis;
-    String? bangsa;
+    String? selectedJenis;
+    String? selectedBangsa;
     final kodeCtrl = TextEditingController();
     final ciriCtrl = TextEditingController();
-    final newJenisCtrl = TextEditingController();
-    final newBangsaCtrl = TextEditingController();
-
-    List<String> localJenisList = ['Sapi', 'Kambing', 'Domba'];
-    List<String> localBangsaList = List.from(_bangsaList);
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setStateSB) {
+        // PENTING: Biar dropdown bisa update state dalam dialog
+        builder: (context, setStateDialog) {
           return AlertDialog(
             title: Text(
-              "Tambah Hewan",
+              "Tambah Hewan Baru",
               style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
             ),
             content: SingleChildScrollView(
@@ -110,17 +120,17 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // DROPDOWN JENIS
+                  // 1. DROPDOWN JENIS (Plus Logic Lainnya)
                   DropdownButtonFormField<String>(
-                    value: jenis,
+                    value: selectedJenis,
                     decoration: _inputDecor("Jenis Hewan"),
                     hint: const Text("Pilih Jenis"),
                     items: [
-                      ...localJenisList.map(
+                      ..._jenisList.map(
                         (e) => DropdownMenuItem(value: e, child: Text(e)),
                       ),
                       const DropdownMenuItem(
-                        value: 'ADD_NEW',
+                        value: 'NEW',
                         child: Row(
                           children: [
                             Icon(Icons.add, size: 16, color: Colors.purple),
@@ -133,49 +143,31 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
                       ),
                     ],
                     onChanged: (val) {
-                      if (val == 'ADD_NEW') {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text("Jenis Hewan Baru"),
-                            content: TextField(
-                              controller: newJenisCtrl,
-                              decoration: _inputDecor("Nama Jenis"),
-                            ),
-                            actions: [
-                              ElevatedButton(
-                                onPressed: () {
-                                  if (newJenisCtrl.text.isNotEmpty) {
-                                    setStateSB(() {
-                                      localJenisList.add(newJenisCtrl.text);
-                                      jenis = newJenisCtrl.text;
-                                    });
-                                    Navigator.pop(ctx);
-                                  }
-                                },
-                                child: const Text("Tambah"),
-                              ),
-                            ],
-                          ),
-                        );
+                      if (val == 'NEW') {
+                        _showTextInputDialog("Jenis Hewan Baru", (text) {
+                          setStateDialog(() {
+                            _jenisList.add(text); // Tambah ke list sementara
+                            selectedJenis = text; // Auto select
+                          });
+                        });
                       } else {
-                        setStateSB(() => jenis = val);
+                        setStateDialog(() => selectedJenis = val);
                       }
                     },
                   ),
                   const SizedBox(height: 10),
 
-                  // DROPDOWN BANGSA
+                  // 2. DROPDOWN BANGSA (Plus Logic Tambah)
                   DropdownButtonFormField<String>(
-                    value: bangsa,
+                    value: selectedBangsa,
                     decoration: _inputDecor("Bangsa / Ras"),
                     hint: const Text("Pilih Ras"),
                     items: [
-                      ...localBangsaList.map(
+                      ..._bangsaList.map(
                         (e) => DropdownMenuItem(value: e, child: Text(e)),
                       ),
                       const DropdownMenuItem(
-                        value: 'ADD_NEW',
+                        value: 'NEW',
                         child: Row(
                           children: [
                             Icon(Icons.add, size: 16, color: Colors.purple),
@@ -188,80 +180,29 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
                       ),
                     ],
                     onChanged: (val) {
-                      if (val == 'ADD_NEW') {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text("Tambah Ras Baru"),
-                            content: TextField(
-                              controller: newBangsaCtrl,
-                              decoration: _inputDecor("Nama Ras"),
-                            ),
-                            actions: [
-                              ElevatedButton(
-                                onPressed: () {
-                                  if (newBangsaCtrl.text.isNotEmpty) {
-                                    try {
-                                      _supabase.from('master_bangsa').insert({
-                                        'nama_bangsa': newBangsaCtrl.text,
-                                      });
-                                    } catch (e) {}
-                                    setStateSB(() {
-                                      localBangsaList.add(newBangsaCtrl.text);
-                                      bangsa = newBangsaCtrl.text;
-                                    });
-                                    Navigator.pop(ctx);
-                                  }
-                                },
-                                child: const Text("Tambah"),
-                              ),
-                            ],
-                          ),
-                        );
+                      if (val == 'NEW') {
+                        _showTextInputDialog("Nama Ras Baru", (text) {
+                          setStateDialog(() {
+                            _bangsaList.add(text);
+                            selectedBangsa = text;
+                          });
+                        });
                       } else {
-                        setStateSB(() => bangsa = val);
+                        setStateDialog(() => selectedBangsa = val);
                       }
                     },
                   ),
                   const SizedBox(height: 10),
 
+                  // 3. INPUT TEXT BIASA
                   TextField(
                     controller: kodeCtrl,
-                    decoration: _inputDecor("Kode Anting / Nama"),
+                    decoration: _inputDecor("Kode / Nama Hewan"),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: ciriCtrl,
-                    decoration: _inputDecor("Ciri-ciri (Opsional)"),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // TAMBAHAN UI FOTO (PAJANGAN)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(12),
-                      color: Colors.grey[50],
-                    ),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.camera_alt,
-                          color: Colors.grey,
-                          size: 30,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Upload Foto (Opsional)",
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
+                    decoration: _inputDecor("Ciri-ciri (Warna, dll)"),
                   ),
                 ],
               ),
@@ -273,37 +214,40 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
               ),
               ElevatedButton(
                 onPressed: () async {
-                  if (kodeCtrl.text.isEmpty || jenis == null) {
+                  if (selectedJenis == null || kodeCtrl.text.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text("Jenis & Identitas Wajib Diisi!"),
+                        content: Text("Jenis & Nama wajib diisi!"),
                       ),
                     );
                     return;
                   }
                   try {
-                    // Simpan langsung pake ID Peternak
                     await _supabase.from('hewan').insert({
                       'peternak_id': widget.peternak['id'],
-                      'jenis': jenis,
-                      'bangsa': bangsa,
+                      'jenis': selectedJenis,
+                      'bangsa': selectedBangsa,
                       'kode_anting': kodeCtrl.text,
                       'ciri_ciri': ciriCtrl.text,
+                      'status': 'Aktif',
                     });
-
                     if (mounted) {
                       Navigator.pop(context);
-                      _fetchDetailData(); // Refresh List Hewan
+                      _fetchDetailData(); // Refresh list utama
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text("Hewan Berhasil Ditambah!"),
+                          content: Text("Hewan berhasil ditambah!"),
+                          backgroundColor: Colors.green,
                         ),
                       );
                     }
                   } catch (e) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text("Gagal: $e")));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Gagal: $e"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
                   }
                 },
                 style: ElevatedButton.styleFrom(
@@ -319,32 +263,116 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
     );
   }
 
-  InputDecoration _inputDecor(String label) => InputDecoration(
-    labelText: label,
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-  );
+  // --- EDIT HEWAN DIALOG ---
+  Future<void> _editHewanDialog(Map<String, dynamic> hewan) async {
+    final kodeCtrl = TextEditingController(text: hewan['kode_anting']);
+    final ciriCtrl = TextEditingController(text: hewan['ciri_ciri']);
+    String jenis = hewan['jenis'] ?? 'Sapi';
 
-  String _formatTanggal(String isoDate) {
-    try {
-      return DateFormat('dd MMM yyyy', 'id_ID').format(DateTime.parse(isoDate));
-    } catch (e) {
-      return "-";
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          "Edit Hewan",
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              value: _jenisList.contains(jenis) ? jenis : null,
+              hint: Text(jenis), // Fallback kalau jenis lama ga ada di list
+              items: _jenisList
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                  .toList(),
+              onChanged: (val) => jenis = val!,
+              decoration: _inputDecor("Jenis"),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: kodeCtrl,
+              decoration: _inputDecor("Kode / Nama"),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ciriCtrl,
+              decoration: _inputDecor("Ciri-ciri"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await _supabase
+                  .from('hewan')
+                  .update({
+                    'jenis': jenis,
+                    'kode_anting': kodeCtrl.text,
+                    'ciri_ciri': ciriCtrl.text,
+                  })
+                  .eq('id', hewan['id']);
+              Navigator.pop(context);
+              _fetchDetailData();
+            },
+            child: const Text("Simpan"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- SOFT DELETE ---
+  Future<void> _deleteHewan(int id) async {
+    bool? confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Hapus Hewan?"),
+        content: const Text(
+          "Hewan akan ditandai sebagai 'Nonaktif' (Dijual/Mati). Riwayat medis tetap aman.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Batal"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Hapus", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await _supabase.from('hewan').update({'status': 'Nonaktif'}).eq('id', id);
+      _fetchDetailData();
     }
+  }
+
+  InputDecoration _inputDecor(String label) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.grey[50], // Style konsisten dengan input pelayanan
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final p = widget.peternak;
-    final alamatFix = p['desa'] != null
-        ? "Ds. ${p['desa']} RT ${p['rt'] ?? '-'}, Kec. ${p['kecamatan'] ?? '-'}"
-        : (p['alamat'] ?? '-');
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          "Detail Peternak",
+          widget.peternak['nama'],
           style: GoogleFonts.poppins(
             color: Colors.black,
             fontWeight: FontWeight.bold,
@@ -356,15 +384,15 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
       ),
       body: Column(
         children: [
-          // HEADER PROFIL
+          // Header Profil
           Container(
-            padding: const EdgeInsets.all(24),
-            margin: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
+            margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF7B1FA2), Color(0xFF9C27B0)],
               ),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
                   color: Colors.purple.withOpacity(0.3),
@@ -379,7 +407,7 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
                   radius: 30,
                   backgroundColor: Colors.white24,
                   child: Text(
-                    p['nama'][0].toUpperCase(),
+                    widget.peternak['nama'][0].toUpperCase(),
                     style: GoogleFonts.poppins(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -393,39 +421,25 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        p['nama'],
+                        widget.peternak['nama'],
                         style: GoogleFonts.poppins(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: 4),
                       Text(
-                        alamatFix,
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.white70,
-                        ),
+                        widget.peternak['alamat'] ?? "-",
+                        style: GoogleFonts.poppins(color: Colors.white70),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.phone,
-                            size: 12,
+                      if (widget.peternak['no_hp'] != null)
+                        Text(
+                          widget.peternak['no_hp'],
+                          style: GoogleFonts.poppins(
                             color: Colors.white70,
+                            fontSize: 12,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            p['no_hp'] ?? '-',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
                     ],
                   ),
                 ),
@@ -433,211 +447,181 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
             ),
           ),
 
-          // TAB BAR
           TabBar(
             controller: _tabController,
             labelColor: Colors.purple,
             unselectedLabelColor: Colors.grey,
             indicatorColor: Colors.purple,
-            labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600),
             tabs: const [
               Tab(text: "Hewan Ternak"),
               Tab(text: "Riwayat Medis"),
             ],
           ),
 
-          // TAB CONTENT
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                    controller: _tabController,
-                    children: [
-                      // TAB 1: LIST HEWAN
-                      _listHewan.isEmpty
-                          ? Center(
-                              child: Text(
-                                "Belum ada data hewan",
-                                style: GoogleFonts.poppins(color: Colors.grey),
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // TAB 1: LIST HEWAN
+                _listHewan.isEmpty
+                    ? Center(
+                        child: Text(
+                          "Belum ada hewan aktif",
+                          style: GoogleFonts.poppins(color: Colors.grey),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _listHewan.length,
+                        itemBuilder: (ctx, i) {
+                          final h = _listHewan[i];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
                               ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(20),
-                              itemCount: _listHewan.length,
-                              itemBuilder: (context, index) {
-                                final h = _listHewan[index];
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey[200]!,
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.pets,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                              title: Text(
+                                "${h['jenis']} - ${h['kode_anting']}",
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (h['bangsa'] != null)
+                                    Text(
+                                      h['bangsa'],
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  Text(
+                                    h['ciri_ciri'] ?? '-',
+                                    style: GoogleFonts.poppins(fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                              trailing: PopupMenuButton(
+                                icon: const Icon(Icons.more_vert),
+                                onSelected: (v) => v == 'edit'
+                                    ? _editHewanDialog(h)
+                                    : _deleteHewan(h['id']),
+                                itemBuilder: (ctx) => [
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.edit,
+                                          size: 18,
+                                          color: Colors.blue,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text("Edit"),
+                                      ],
                                     ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange[50],
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.delete,
+                                          size: 18,
+                                          color: Colors.red,
                                         ),
-                                        child: Icon(
-                                          Icons.pets,
-                                          color: Colors.orange[800],
-                                          size: 20,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              "${h['jenis']} - ${h['bangsa'] ?? 'Umum'}",
-                                              style: GoogleFonts.poppins(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            Text(
-                                              "Kode: ${h['kode_anting']}",
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                            if (h['ciri_ciri'] != null &&
-                                                h['ciri_ciri'] != '')
-                                              Text(
-                                                "Ciri: ${h['ciri_ciri']}",
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 11,
-                                                  color: Colors.grey,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                        SizedBox(width: 8),
+                                        Text("Hapus"),
+                                      ],
+                                    ),
                                   ),
-                                );
-                              },
+                                ],
+                              ),
                             ),
+                          );
+                        },
+                      ),
 
-                      // TAB 2: RIWAYAT MEDIS
-                      _listRiwayat.isEmpty
-                          ? Center(
-                              child: Text(
-                                "Belum ada riwayat medis",
-                                style: GoogleFonts.poppins(color: Colors.grey),
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(20),
-                              itemCount: _listRiwayat.length,
-                              itemBuilder: (context, index) {
-                                final r = _listRiwayat[index];
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey[200]!,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            _formatTanggal(r['waktu']),
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color:
-                                                  r['kategori_layanan'] ==
-                                                      'IB (Inseminasi)'
-                                                  ? Colors.blue[50]
-                                                  : Colors.green[50],
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                            ),
-                                            child: Text(
-                                              r['kategori_layanan'] ??
-                                                  'Pengobatan',
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 10,
-                                                color: Colors.black87,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        r['diagnosa'] ?? '-',
-                                        style: GoogleFonts.poppins(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      Text(
-                                        "Tindakan: ${r['jenis_layanan']}",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      if (r['obat_1'] != null)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 6,
-                                          ),
-                                          child: Text(
-                                            "Obat: ${r['obat_1']}, ${r['obat_2'] ?? ''}",
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 11,
-                                              color: Colors.grey[600],
-                                              fontStyle: FontStyle.italic,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
+                // TAB 2: RIWAYAT
+                _listRiwayat.isEmpty
+                    ? Center(
+                        child: Text(
+                          "Belum ada riwayat",
+                          style: GoogleFonts.poppins(color: Colors.grey),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _listRiwayat.length,
+                        itemBuilder: (ctx, i) {
+                          final r = _listRiwayat[i];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                    ],
-                  ),
+                            child: ListTile(
+                              title: Text(
+                                r['diagnosa'] ?? '-',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    DateFormat(
+                                      'dd MMM yyyy',
+                                    ).format(DateTime.parse(r['waktu'])),
+                                    style: GoogleFonts.poppins(fontSize: 12),
+                                  ),
+                                  Text(
+                                    "Tindakan: ${r['jenis_layanan'] ?? '-'}",
+                                    style: GoogleFonts.poppins(fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                              trailing: Text(
+                                "Rp ${r['biaya']}",
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ],
+            ),
           ),
         ],
       ),
-
-      // TOMBOL TAMBAH HEWAN (BARU)
+      // --- TOMBOL TAMBAH (+) ---
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddHewanDialog,
         backgroundColor: Colors.purple,
-        tooltip: "Tambah Hewan",
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );

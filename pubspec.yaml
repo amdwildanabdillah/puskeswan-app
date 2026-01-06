@@ -26,18 +26,20 @@ dependencies:
   path_provider: ^2.1.5
   share_plus: ^12.0.1
   package_info_plus: ^9.0.0
+  
+  # --- PENTING BUAT DOWNLOAD DI WEB ---
+  universal_html: ^2.2.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  # --- INI YANG BARU KITA TAMBAH ---
   flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
 
-# --- SETTINGAN LOGO DISINI (JANGAN DIUBAH SPASINYA) ---
+# --- SETTINGAN LOGO ---
 flutter_launcher_icons:
   android: "ic_launcher"
   ios: true

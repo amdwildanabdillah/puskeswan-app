@@ -22,10 +22,12 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
   bool _isLoading = false;
   bool _isInit = false;
 
-  // DATA LISTS
+  // DATA LISTS DARI DB
   List<Map<String, dynamic>> _peternakList = [];
   List<Map<String, dynamic>> _hewanList = [];
   List<Map<String, dynamic>> _obatList = [];
+
+  // LIST MASTER DATA
   List<String> _diagnosaList = [
     'Demam Three Day',
     'PMK',
@@ -33,9 +35,14 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
     'Kembung',
     'Cacingan',
   ];
+  List<String> _jenisList = ['Sapi', 'Kambing', 'Domba'];
   List<String> _bangsaList = ['Limosin', 'Simental', 'PO', 'Brahman', 'Jawa'];
 
-  // SELECTION
+  // KHUSUS IB
+  List<String> _ibJenisList = ['Sapi', 'Kambing', 'Domba'];
+  List<String> _ibBangsaList = ['Limosin', 'Simental', 'PO', 'Brahman', 'Jawa'];
+
+  // SELECTION STATE
   String? _selectedPeternakId;
   String? _selectedPeternakNama;
   String? _selectedHewanId;
@@ -43,23 +50,50 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
 
   // LOGIC UI
   String _kategoriLayanan = 'Pengobatan';
-  final List<String> _layananOptions = [
-    'Pengobatan',
-    'IB (Inseminasi)',
-    'PKB (Cek Hamil)',
-    'Vaksinasi',
-  ];
+  final List<String> _layananOptions = ['Pengobatan', 'IB', 'PKB'];
 
   // CONTROLLERS
   final _anamnesaController = TextEditingController();
   final _diagnosaController = TextEditingController();
-  final _tindakanController = TextEditingController();
+  final _keteranganController = TextEditingController();
   final _biayaController = TextEditingController();
-  final _strawController = TextEditingController();
 
-  // OBAT CONTROLLERS (Max 5)
-  final List<String?> _selectedObatIds = [null, null, null, null, null];
-  final List<String?> _selectedObatNames = [null, null, null, null, null];
+  // CONTROLLER KHUSUS
+  final _strawKodeController = TextEditingController();
+  String? _selectedIbJenis;
+  String? _selectedIbBangsa;
+  String? _pkbStatus;
+  final _pkbBulanController = TextEditingController();
+
+  // CONTROLLER DOSIS OBAT
+  Map<String, dynamic>? _obatDipilih;
+  final _dosisController = TextEditingController();
+  final List<Map<String, dynamic>> _listResepFix = [];
+
+  // DATA WILAYAH TRENGGALEK (HARDCODED BIAR CEPAT & OFFLINE READY)
+  final Map<String, List<String>> _dataWilayah = {
+    'Panggul': [
+      'Wonocoyo',
+      'Bodag',
+      'Kertosono',
+      'Panggul',
+      'Gayam',
+      'Nglebeng',
+    ],
+    'Munjungan': ['Masaran', 'Munjungan', 'Tawing', 'Bendoroto', 'Bangun'],
+    'Pule': ['Pule', 'Pakel', 'Tanggaran', 'Jombok', 'Kuyon', 'Sidomulyo'],
+    'Dongko': ['Dongko', 'Ngerdani', 'Siki', 'Pringapus', 'Cakul'],
+    'Tugu': ['Nglongsor', 'Prambon', 'Gondang', 'Banaran', 'Winong'],
+    'Karangan': ['Karangan', 'Salamrejo', 'Bulurejo', 'Sumberingin'],
+    'Kampak': ['Bendoagung', 'Sugihan', 'Timahan', 'Karangrejo'],
+    'Watulimo': ['Prigi', 'Tasikmadu', 'Margomulyo', 'Watulimo'],
+    'Bendungan': ['Dompyong', 'Surenlor', 'Sumurup', 'Sengon'],
+    'Gandusari': ['Gandusari', 'Sukorejo', 'Widoro', 'Wonoanti'],
+    'Trenggalek': ['Sumbergedong', 'Surodakan', 'Ngantru', 'Kelutan'],
+    'Pogalan': ['Pogalan', 'Ngetal', 'Ngadirejo', 'Bendorejo'],
+    'Durenan': ['Durenan', 'Pandean', 'Kendalrejo', 'Semarum'],
+    'Suruh': ['Suruh', 'Nglebo', 'Puru', 'Mlinjon'],
+  };
 
   @override
   void initState() {
@@ -72,6 +106,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
     });
   }
 
+  // --- FETCH DATA ---
   Future<void> _fetchInitialData() async {
     try {
       final dataPeternak = await _supabase
@@ -81,27 +116,9 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
       final dataObat = await _supabase
           .from('barang')
           .select('id, nama_barang, stok')
+          .eq('jenis', 'Obat')
           .gt('stok', 0)
           .order('nama_barang');
-
-      try {
-        final dataDiagnosa = await _supabase
-            .from('master_diagnosa')
-            .select('nama_penyakit');
-        final dataBangsa = await _supabase
-            .from('master_bangsa')
-            .select('nama_bangsa');
-        if (mounted) {
-          setState(() {
-            _diagnosaList = List<String>.from(
-              dataDiagnosa.map((e) => e['nama_penyakit']),
-            );
-            _bangsaList = List<String>.from(
-              dataBangsa.map((e) => e['nama_bangsa']),
-            );
-          });
-        }
-      } catch (e) {} // Silent fail
 
       if (mounted) {
         setState(() {
@@ -109,7 +126,9 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
           _obatList = List<Map<String, dynamic>>.from(dataObat);
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      debugPrint("Error Init: $e");
+    }
   }
 
   Future<void> _fetchHewanByPeternak(String peternakId) async {
@@ -119,98 +138,66 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
         _selectedHewanId = null;
         _selectedHewanDetail = null;
       });
+      // Filter yang Aktif saja
       final data = await _supabase
           .from('hewan')
           .select()
           .eq('peternak_id', peternakId)
+          .eq('status', 'Aktif')
           .order('created_at', ascending: false);
       if (mounted)
         setState(() => _hewanList = List<Map<String, dynamic>>.from(data));
     } catch (e) {}
   }
 
-  // --- POPUP ADD PETERNAK ---
-  Future<void> _addPeternakDialog() async {
-    final namaCtrl = TextEditingController();
-    final desaCtrl = TextEditingController();
-    final rtCtrl = TextEditingController();
-    final hpCtrl = TextEditingController();
+  // --- LOGIC OBAT ---
+  void _tambahObatKeList() {
+    if (_obatDipilih == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Pilih obat dulu!")));
+      return;
+    }
+    if (_dosisController.text.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Isi dosis obat (ml)!")));
+      return;
+    }
+    setState(() {
+      _listResepFix.add({
+        'id': _obatDipilih!['id'],
+        'nama': _obatDipilih!['nama_barang'],
+        'dosis': _dosisController.text,
+      });
+      _obatDipilih = null;
+      _dosisController.clear();
+    });
+  }
 
+  // --- POPUP INPUT TEXT HELPER ---
+  Future<void> _showTextInputDialog(
+    String title,
+    Function(String) onSave,
+  ) async {
+    final txtCtrl = TextEditingController();
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Text(
-          "Peternak Baru",
+          title,
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: namaCtrl,
-                decoration: _inputDecor("Nama Lengkap"),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: desaCtrl,
-                      decoration: _inputDecor("Desa"),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: rtCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: _inputDecor("RT"),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: hpCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: _inputDecor("No HP (Opsional)"),
-              ),
-            ],
-          ),
+        content: TextField(
+          controller: txtCtrl,
+          decoration: _inputDecor("Ketik baru..."),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Batal"),
-          ),
           ElevatedButton(
-            onPressed: () async {
-              if (namaCtrl.text.isEmpty) return;
-              try {
-                final res = await _supabase
-                    .from('peternak')
-                    .insert({
-                      'nama': namaCtrl.text,
-                      'alamat': "${desaCtrl.text}, RT ${rtCtrl.text}",
-                      'desa': desaCtrl.text,
-                      'rt': rtCtrl.text,
-                      'no_hp': hpCtrl.text,
-                    })
-                    .select()
-                    .single();
-
-                await _fetchInitialData();
-                setState(() {
-                  _selectedPeternakId = res['id'].toString();
-                  _selectedPeternakNama = res['nama'];
-                });
-                _fetchHewanByPeternak(res['id'].toString());
-                if (mounted) Navigator.pop(context);
-              } catch (e) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text("Gagal: $e")));
+            onPressed: () {
+              if (txtCtrl.text.isNotEmpty) {
+                onSave(txtCtrl.text);
+                Navigator.pop(ctx);
               }
             },
             style: ElevatedButton.styleFrom(
@@ -224,19 +211,19 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
     );
   }
 
-  // --- POPUP ADD HEWAN (REVISI LENGKAP) ---
+  // --- DIALOG ADD HEWAN (SINKRON) ---
   Future<void> _addHewanDialog() async {
-    if (_selectedPeternakId == null) return;
+    if (_selectedPeternakId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Pilih Peternak dulu!")));
+      return;
+    }
 
-    String? jenis;
-    String? bangsa;
+    String? selectedJenis;
+    String? selectedBangsa;
     final kodeCtrl = TextEditingController();
     final ciriCtrl = TextEditingController();
-    final newJenisCtrl = TextEditingController();
-    final newBangsaCtrl = TextEditingController();
-
-    List<String> localJenisList = ['Sapi', 'Kambing', 'Domba'];
-    List<String> localBangsaList = List.from(_bangsaList);
 
     await showDialog(
       context: context,
@@ -250,18 +237,17 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: jenis,
+                    value: selectedJenis,
                     decoration: _inputDecor("Jenis Hewan"),
                     hint: const Text("Pilih Jenis"),
                     items: [
-                      ...localJenisList.map(
+                      ..._jenisList.map(
                         (e) => DropdownMenuItem(value: e, child: Text(e)),
                       ),
                       const DropdownMenuItem(
-                        value: 'ADD_NEW',
+                        value: 'NEW',
                         child: Row(
                           children: [
                             Icon(Icons.add, size: 16, color: Colors.purple),
@@ -274,48 +260,29 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                       ),
                     ],
                     onChanged: (val) {
-                      if (val == 'ADD_NEW') {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text("Jenis Hewan Baru"),
-                            content: TextField(
-                              controller: newJenisCtrl,
-                              decoration: _inputDecor("Nama Jenis"),
-                            ),
-                            actions: [
-                              ElevatedButton(
-                                onPressed: () {
-                                  if (newJenisCtrl.text.isNotEmpty) {
-                                    setStateSB(() {
-                                      localJenisList.add(newJenisCtrl.text);
-                                      jenis = newJenisCtrl.text;
-                                    });
-                                    Navigator.pop(ctx);
-                                  }
-                                },
-                                child: const Text("Tambah"),
-                              ),
-                            ],
-                          ),
-                        );
+                      if (val == 'NEW') {
+                        _showTextInputDialog("Jenis Hewan Baru", (text) {
+                          setStateSB(() {
+                            _jenisList.add(text);
+                            selectedJenis = text;
+                          });
+                        });
                       } else {
-                        setStateSB(() => jenis = val);
+                        setStateSB(() => selectedJenis = val);
                       }
                     },
                   ),
                   const SizedBox(height: 10),
-
                   DropdownButtonFormField<String>(
-                    value: bangsa,
+                    value: selectedBangsa,
                     decoration: _inputDecor("Bangsa / Ras"),
-                    hint: const Text("Pilih Ras (Limosin, dll)"),
+                    hint: const Text("Pilih Ras"),
                     items: [
-                      ...localBangsaList.map(
+                      ..._bangsaList.map(
                         (e) => DropdownMenuItem(value: e, child: Text(e)),
                       ),
                       const DropdownMenuItem(
-                        value: 'ADD_NEW',
+                        value: 'NEW',
                         child: Row(
                           children: [
                             Icon(Icons.add, size: 16, color: Colors.purple),
@@ -328,43 +295,19 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                       ),
                     ],
                     onChanged: (val) {
-                      if (val == 'ADD_NEW') {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text("Tambah Ras Baru"),
-                            content: TextField(
-                              controller: newBangsaCtrl,
-                              decoration: _inputDecor("Nama Ras"),
-                            ),
-                            actions: [
-                              ElevatedButton(
-                                onPressed: () {
-                                  if (newBangsaCtrl.text.isNotEmpty) {
-                                    try {
-                                      _supabase.from('master_bangsa').insert({
-                                        'nama_bangsa': newBangsaCtrl.text,
-                                      });
-                                    } catch (e) {}
-                                    setStateSB(() {
-                                      localBangsaList.add(newBangsaCtrl.text);
-                                      bangsa = newBangsaCtrl.text;
-                                    });
-                                    Navigator.pop(ctx);
-                                  }
-                                },
-                                child: const Text("Tambah"),
-                              ),
-                            ],
-                          ),
-                        );
+                      if (val == 'NEW') {
+                        _showTextInputDialog("Nama Ras Baru", (text) {
+                          setStateSB(() {
+                            _bangsaList.add(text);
+                            selectedBangsa = text;
+                          });
+                        });
                       } else {
-                        setStateSB(() => bangsa = val);
+                        setStateSB(() => selectedBangsa = val);
                       }
                     },
                   ),
                   const SizedBox(height: 10),
-
                   TextField(
                     controller: kodeCtrl,
                     decoration: _inputDecor("Kode Anting / Nama"),
@@ -372,35 +315,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: ciriCtrl,
-                    decoration: _inputDecor("Ciri-ciri / Warna (Opsional)"),
-                  ),
-                  const SizedBox(height: 10),
-
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(12),
-                      color: Colors.grey[50],
-                    ),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.camera_alt,
-                          color: Colors.grey,
-                          size: 30,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Upload Foto (Opsional)",
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
+                    decoration: _inputDecor("Ciri-ciri"),
                   ),
                 ],
               ),
@@ -412,23 +327,17 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
               ),
               ElevatedButton(
                 onPressed: () async {
-                  if (kodeCtrl.text.isEmpty || jenis == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Jenis & Identitas Wajib Diisi!"),
-                      ),
-                    );
-                    return;
-                  }
+                  if (kodeCtrl.text.isEmpty || selectedJenis == null) return;
                   try {
                     final res = await _supabase
                         .from('hewan')
                         .insert({
                           'peternak_id': _selectedPeternakId,
-                          'jenis': jenis,
-                          'bangsa': bangsa,
+                          'jenis': selectedJenis,
+                          'bangsa': selectedBangsa,
                           'kode_anting': kodeCtrl.text,
                           'ciri_ciri': ciriCtrl.text,
+                          'status': 'Aktif',
                         })
                         .select()
                         .single();
@@ -458,12 +367,168 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
     );
   }
 
-  // --- SUBMIT UTAMA ---
+  // --- DIALOG ADD PETERNAK (REVISI: DROPDOWN WILAYAH) ---
+  Future<void> _addPeternakDialog() async {
+    final namaCtrl = TextEditingController();
+    final rtCtrl = TextEditingController();
+    final hpCtrl = TextEditingController();
+
+    // State Lokal Dialog
+    String? selectedKecamatan;
+    String? selectedDesa;
+    List<String> currentDesaList = [];
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        // Agar dropdown bisa berubah
+        builder: (context, setStateSB) {
+          return AlertDialog(
+            title: Text(
+              "Peternak Baru",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: namaCtrl,
+                    decoration: _inputDecor("Nama Lengkap"),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // DROPDOWN KECAMATAN
+                  DropdownButtonFormField<String>(
+                    value: selectedKecamatan,
+                    decoration: _inputDecor("Kecamatan"),
+                    hint: const Text("Pilih Kecamatan"),
+                    items: _dataWilayah.keys
+                        .map(
+                          (kec) =>
+                              DropdownMenuItem(value: kec, child: Text(kec)),
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      setStateSB(() {
+                        selectedKecamatan = val;
+                        selectedDesa = null; // Reset desa saat ganti kecamatan
+                        currentDesaList = _dataWilayah[val] ?? [];
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  // DROPDOWN DESA (Otomatis muncul sesuai Kecamatan)
+                  DropdownButtonFormField<String>(
+                    value: selectedDesa,
+                    decoration: _inputDecor("Desa / Kelurahan"),
+                    hint: const Text("Pilih Desa"),
+                    items: currentDesaList
+                        .map(
+                          (desa) =>
+                              DropdownMenuItem(value: desa, child: Text(desa)),
+                        )
+                        .toList(),
+                    onChanged: (val) => setStateSB(() => selectedDesa = val),
+                    disabledHint: const Text("Pilih Kecamatan Dulu"),
+                  ),
+                  const SizedBox(height: 10),
+
+                  TextField(
+                    controller: rtCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: _inputDecor("RT (Angka)"),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: hpCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: _inputDecor("No HP"),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Batal"),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (namaCtrl.text.isEmpty ||
+                      selectedKecamatan == null ||
+                      selectedDesa == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Nama & Alamat wajib diisi!"),
+                      ),
+                    );
+                    return;
+                  }
+                  try {
+                    // Format alamat lengkap
+                    String alamatLengkap =
+                        "Kec. $selectedKecamatan, Ds. $selectedDesa, RT ${rtCtrl.text}";
+
+                    final res = await _supabase
+                        .from('peternak')
+                        .insert({
+                          'nama': namaCtrl.text,
+                          'alamat': alamatLengkap,
+                          'kecamatan': selectedKecamatan,
+                          'desa': selectedDesa,
+                          'rt': rtCtrl.text,
+                          'no_hp': hpCtrl.text,
+                        })
+                        .select()
+                        .single();
+
+                    await _fetchInitialData();
+                    setState(() {
+                      _selectedPeternakId = res['id'].toString();
+                      _selectedPeternakNama = res['nama'];
+                    });
+                    _fetchHewanByPeternak(res['id'].toString());
+                    if (mounted) Navigator.pop(context);
+                  } catch (e) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text("Gagal: $e")));
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text("Simpan"),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // --- SUBMIT ---
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedPeternakId == null || _selectedHewanId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Data Pasien belum lengkap!")),
+        const SnackBar(content: Text("Peternak & Hewan wajib dipilih!")),
+      );
+      return;
+    }
+
+    if (_kategoriLayanan == 'Pengobatan' && _listResepFix.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Minimal 1 obat untuk Pengobatan!")),
+      );
+      return;
+    }
+    if (_kategoriLayanan == 'PKB' && _pkbStatus == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Status Bunting/Tidak wajib dipilih!")),
       );
       return;
     }
@@ -477,77 +542,73 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
           ) ??
           0;
       String userEmail = _supabase.auth.currentUser?.email ?? 'admin';
-
       String detailHewanFix =
-          "${_selectedHewanDetail?['kode_anting']} - ${_selectedHewanDetail?['bangsa'] ?? ''}";
+          "${_selectedHewanDetail?['jenis'] ?? ''} - ${_selectedHewanDetail?['kode_anting'] ?? ''}";
+
+      String resepStr = _listResepFix
+          .map((e) => "${e['nama']} (${e['dosis']}ml)")
+          .join(", ");
 
       final dataLaporan = {
         'nama_peternak': _selectedPeternakNama,
+        'hewan_id': _selectedHewanId,
         'jenis_hewan': _selectedHewanDetail?['jenis'] ?? 'Umum',
         'detail_hewan': detailHewanFix,
-        'jumlah_hewan': 1,
         'anamnesa': _anamnesaController.text.trim(),
         'kategori_layanan': _kategoriLayanan,
-        'diagnosa': _kategoriLayanan == 'Pengobatan'
-            ? _diagnosaController.text.trim()
-            : '-',
-        'jenis_layanan': _tindakanController.text.trim(),
-        'kode_straw': _kategoriLayanan == 'IB (Inseminasi)'
-            ? _strawController.text.trim()
-            : null,
-        'obat_1': _selectedObatNames[0],
-        'obat_2': _selectedObatNames[1],
-        'obat_3': _selectedObatNames[2],
-        'obat_4': _selectedObatNames[3],
-        'obat_5': _selectedObatNames[4],
+        'jenis_layanan': _keteranganController.text.trim(),
         'biaya': biayaFix,
         'waktu': _selectedDate.toIso8601String(),
         'dokter_email': userEmail,
+        'diagnosa': _kategoriLayanan == 'Pengobatan'
+            ? _diagnosaController.text
+            : '-',
+        'obat_1': _kategoriLayanan == 'Pengobatan' ? resepStr : null,
+        'ib_kode_straw': _kategoriLayanan == 'IB'
+            ? _strawKodeController.text
+            : null,
+        'ib_jenis_hewan': _kategoriLayanan == 'IB' ? _selectedIbJenis : null,
+        'ib_bangsa': _kategoriLayanan == 'IB' ? _selectedIbBangsa : null,
+        'pkb_status': _kategoriLayanan == 'PKB' ? _pkbStatus : null,
+        'pkb_usia_bulan': (_kategoriLayanan == 'PKB' && _pkbStatus == 'Bunting')
+            ? int.tryParse(_pkbBulanController.text)
+            : null,
       };
 
-      final connectivityResult = await (Connectivity().checkConnectivity());
-      if (connectivityResult.contains(ConnectivityResult.none)) {
+      final connectivity = await (Connectivity().checkConnectivity());
+      if (connectivity.contains(ConnectivityResult.none)) {
         await DatabaseHelper().insertTransaksi(dataLaporan);
         if (mounted)
-          _showSuccessDialog(
-            "OFFLINE MODE",
-            "Data tersimpan di HP.",
-            Colors.orange,
-          );
+          _showDialog("OFFLINE", "Data tersimpan di HP.", Colors.orange);
       } else {
         await _supabase.from('pelayanan').insert(dataLaporan);
         if (mounted)
-          _showSuccessDialog("BERHASIL", "Laporan tersimpan!", Colors.green);
+          _showDialog("BERHASIL", "Laporan tersimpan!", Colors.green);
       }
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Gagal: $e"), backgroundColor: Colors.red),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Gagal: $e"), backgroundColor: Colors.red),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showSuccessDialog(String title, String message, Color color) {
+  void _showDialog(String title, String msg, Color color) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      builder: (ctx) => AlertDialog(
         title: Column(
           children: [
-            Icon(Icons.check_circle, size: 50, color: color),
-            Text(
-              title,
-              style: TextStyle(color: color, fontWeight: FontWeight.bold),
-            ),
+            Icon(Icons.check_circle, color: color, size: 50),
+            Text(title, style: TextStyle(color: color)),
           ],
         ),
-        content: Text(message, textAlign: TextAlign.center),
+        content: Text(msg, textAlign: TextAlign.center),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(ctx);
               Navigator.pop(context);
             },
             child: const Text("OK"),
@@ -586,10 +647,8 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
         elevation: 0,
         leading: const BackButton(color: Colors.black),
       ),
-      // WRAP PAKE SAFEAREA BIAR GA KEPOTONG STATUS BAR/NAV BAR BROWSER
       body: SafeArea(
         child: SingleChildScrollView(
-          // TAMBAH PADDING BAWAH YANG BANYAK BIAR BISA DI SCROLL SAMPAI MENTOK
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
           child: Form(
             key: _formKey,
@@ -702,151 +761,76 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 24),
 
                 _buildSectionTitle("Jenis Pelayanan", Icons.medical_services),
-                _buildCardContainer(
-                  DropdownButtonFormField<String>(
-                    value: _kategoriLayanan,
-                    decoration: _inputDecor("Kategori"),
-                    items: _layananOptions
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                        .toList(),
-                    onChanged: (val) => setState(() => _kategoriLayanan = val!),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: _layananOptions.map((opt) {
+                    bool isActive = _kategoriLayanan == opt;
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ElevatedButton(
+                          onPressed: () => setState(() {
+                            _kategoriLayanan = opt;
+                            _listResepFix.clear();
+                            _pkbStatus = null;
+                          }),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isActive
+                                ? Colors.purple
+                                : Colors.grey[100],
+                            foregroundColor: isActive
+                                ? Colors.white
+                                : Colors.black87,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            opt,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
-
                 const SizedBox(height: 24),
 
-                _buildSectionTitle("Detail Medis & Biaya", Icons.assignment),
+                _buildSectionTitle(
+                  "Detail: $_kategoriLayanan",
+                  Icons.assignment,
+                ),
                 _buildCardContainer(
                   Column(
                     children: [
                       TextFormField(
                         controller: _anamnesaController,
-                        maxLines: 2,
                         decoration: _inputDecor("Anamnesa (Keluhan)"),
-                        validator: (v) => v!.isEmpty ? "Isi dulu" : null,
+                        maxLines: 2,
                       ),
                       const SizedBox(height: 16),
-
-                      if (_kategoriLayanan.contains('IB')) ...[
-                        TextFormField(
-                          controller: _strawController,
-                          decoration: _inputDecor("Kode Straw / Pejantan"),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      if (_kategoriLayanan == 'Pengobatan') ...[
-                        DropdownButtonFormField<String>(
-                          decoration: _inputDecor("Diagnosa"),
-                          value: null,
-                          hint: const Text("Pilih / Tambah Diagnosa"),
-                          items: [
-                            ..._diagnosaList.map(
-                              (e) => DropdownMenuItem(value: e, child: Text(e)),
-                            ),
-                            const DropdownMenuItem(
-                              value: 'ADD_NEW',
-                              child: Text(
-                                "+ Tambah Diagnosa Baru",
-                                style: TextStyle(color: Colors.purple),
-                              ),
-                            ),
-                          ],
-                          onChanged: (val) {
-                            if (val == 'ADD_NEW') {
-                              final diagCtrl = TextEditingController();
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text("Diagnosa Baru"),
-                                  content: TextField(
-                                    controller: diagCtrl,
-                                    decoration: _inputDecor("Nama Penyakit"),
-                                  ),
-                                  actions: [
-                                    ElevatedButton(
-                                      onPressed: () {
-                                        if (diagCtrl.text.isNotEmpty) {
-                                          setState(
-                                            () => _diagnosaList.add(
-                                              diagCtrl.text,
-                                            ),
-                                          );
-                                          _diagnosaController.text =
-                                              diagCtrl.text;
-                                          Navigator.pop(ctx);
-                                        }
-                                      },
-                                      child: const Text("Simpan"),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            } else {
-                              _diagnosaController.text = val!;
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
+                      if (_kategoriLayanan == 'Pengobatan')
+                        _buildFormPengobatan(),
+                      if (_kategoriLayanan == 'IB') _buildFormIB(),
+                      if (_kategoriLayanan == 'PKB') _buildFormPKB(),
+                      const SizedBox(height: 16),
                       TextFormField(
-                        controller: _tindakanController,
-                        decoration: _inputDecor("Tindakan / Penanganan"),
+                        controller: _keteranganController,
+                        decoration: _inputDecor("Keterangan"),
+                        maxLines: 2,
                       ),
-                      const SizedBox(height: 16),
-
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          "Resep Obat:",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...List.generate(5, (index) {
-                        if (index == 0 || _selectedObatIds[index - 1] != null) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: DropdownButtonFormField<String>(
-                              decoration: _inputDecor("Obat ke-${index + 1}"),
-                              value: _selectedObatIds[index],
-                              isExpanded: true,
-                              hint: const Text("Pilih Obat..."),
-                              items: _obatList
-                                  .map(
-                                    (obat) => DropdownMenuItem(
-                                      value: obat['id'].toString(),
-                                      child: Text(
-                                        "${obat['nama_barang']} (Sisa: ${obat['stok']})",
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (val) {
-                                setState(() {
-                                  _selectedObatIds[index] = val;
-                                  _selectedObatNames[index] = _obatList
-                                      .firstWhere(
-                                        (e) => e['id'].toString() == val,
-                                      )['nama_barang'];
-                                });
-                              },
-                            ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      }),
-
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _biayaController,
                         keyboardType: TextInputType.number,
-                        decoration: _inputDecor("Biaya Pelayanan (Rp)"),
+                        decoration: _inputDecor("Biaya (Rp)"),
                         validator: (v) => v!.isEmpty ? "Isi biaya" : null,
                       ),
                     ],
@@ -876,7 +860,6 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 50),
               ],
             ),
           ),
@@ -885,71 +868,286 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
     );
   }
 
-  InputDecoration _inputDecor(String label) {
-    return InputDecoration(
-      labelText: label,
-      filled: true,
-      fillColor: Colors.grey[50],
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-    );
-  }
-
-  Widget _buildSectionTitle(String title, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.purple, size: 20),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+  Widget _buildFormPengobatan() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          decoration: _inputDecor("Diagnosa"),
+          value: null,
+          hint: Text(
+            _diagnosaController.text.isEmpty
+                ? "Pilih Diagnosa"
+                : _diagnosaController.text,
+          ),
+          items: [
+            ..._diagnosaList.map(
+              (e) => DropdownMenuItem(value: e, child: Text(e)),
+            ),
+            const DropdownMenuItem(
+              value: 'NEW',
+              child: Text(
+                "+ Tambah Baru...",
+                style: TextStyle(color: Colors.purple),
+              ),
+            ),
+          ],
+          onChanged: (val) {
+            if (val == 'NEW')
+              _showTextInputDialog(
+                "Diagnosa Baru",
+                (v) => setState(() => _diagnosaController.text = v),
+              );
+            else
+              setState(() => _diagnosaController.text = val!);
+          },
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          "Resep Obat & Dosis:",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: DropdownButtonFormField<Map<String, dynamic>>(
+                isExpanded: true,
+                decoration: _inputDecor("Pilih Obat"),
+                value: _obatDipilih,
+                items: _obatList
+                    .map(
+                      (o) => DropdownMenuItem(
+                        value: o,
+                        child: Text(
+                          "${o['nama_barang']} (${o['stok']})",
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setState(() => _obatDipilih = v),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextFormField(
+                controller: _dosisController,
+                keyboardType: TextInputType.number,
+                decoration: _inputDecor("ml"),
+              ),
+            ),
+            const SizedBox(width: 8),
+            InkWell(
+              onTap: _tambahObatKeList,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.add, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        if (_listResepFix.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: _listResepFix
+                  .map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "• ${item['nama']}",
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Text("${item['dosis']} ml"),
+                          InkWell(
+                            onTap: () =>
+                                setState(() => _listResepFix.remove(item)),
+                            child: const Icon(
+                              Icons.delete,
+                              color: Colors.red,
+                              size: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
-  Widget _buildCardContainer(Widget child) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+  Widget _buildFormIB() {
+    return Column(
+      children: [
+        TextFormField(
+          controller: _strawKodeController,
+          decoration: _inputDecor("Kode Straw"),
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          decoration: _inputDecor("Jenis Hewan"),
+          value: _selectedIbJenis,
+          items: [
+            ..._ibJenisList.map(
+              (e) => DropdownMenuItem(value: e, child: Text(e)),
+            ),
+            const DropdownMenuItem(
+              value: 'NEW',
+              child: Text(
+                "+ Tambah...",
+                style: TextStyle(color: Colors.purple),
+              ),
+            ),
+          ],
+          onChanged: (v) {
+            if (v == 'NEW')
+              _showTextInputDialog(
+                "Jenis Baru",
+                (val) => setState(() => _selectedIbJenis = val),
+              );
+            else
+              setState(() => _selectedIbJenis = v);
+          },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          decoration: _inputDecor("Bangsa"),
+          value: _selectedIbBangsa,
+          items: [
+            ..._ibBangsaList.map(
+              (e) => DropdownMenuItem(value: e, child: Text(e)),
+            ),
+            const DropdownMenuItem(
+              value: 'NEW',
+              child: Text(
+                "+ Tambah...",
+                style: TextStyle(color: Colors.purple),
+              ),
+            ),
+          ],
+          onChanged: (v) {
+            if (v == 'NEW')
+              _showTextInputDialog(
+                "Bangsa Baru",
+                (val) => setState(() => _selectedIbBangsa = val),
+              );
+            else
+              setState(() => _selectedIbBangsa = v);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormPKB() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Hasil Cek:", style: TextStyle(fontWeight: FontWeight.bold)),
+        Row(
+          children: [
+            Expanded(
+              child: RadioListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text("Bunting"),
+                value: "Bunting",
+                groupValue: _pkbStatus,
+                activeColor: Colors.purple,
+                onChanged: (v) => setState(() => _pkbStatus = v),
+              ),
+            ),
+            Expanded(
+              child: RadioListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text("Tidak"),
+                value: "Tidak",
+                groupValue: _pkbStatus,
+                activeColor: Colors.purple,
+                onChanged: (v) => setState(() => _pkbStatus = v),
+              ),
+            ),
+          ],
+        ),
+        if (_pkbStatus == 'Bunting') ...[
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _pkbBulanController,
+            keyboardType: TextInputType.number,
+            decoration: _inputDecor("Usia Kebuntingan (Bulan)"),
           ),
         ],
-      ),
-      child: child,
+      ],
     );
   }
 
-  Widget _buildAddButton(VoidCallback? onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: onTap == null ? Colors.grey[200] : Colors.purple[100],
-          borderRadius: BorderRadius.circular(12),
+  InputDecoration _inputDecor(String label) => InputDecoration(
+    labelText: label,
+    filled: true,
+    fillColor: Colors.grey[50],
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide.none,
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+  );
+  Widget _buildSectionTitle(String title, IconData icon) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      children: [
+        Icon(icon, color: Colors.purple, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16),
         ),
-        child: Icon(
-          Icons.add,
-          color: onTap == null ? Colors.grey : Colors.purple,
+      ],
+    ),
+  );
+  Widget _buildCardContainer(Widget child) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Colors.grey[200]!),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.05),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
         ),
+      ],
+    ),
+    child: child,
+  );
+  Widget _buildAddButton(VoidCallback? onTap) => InkWell(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: onTap == null ? Colors.grey[200] : Colors.purple[100],
+        borderRadius: BorderRadius.circular(12),
       ),
-    );
-  }
+      child: Icon(
+        Icons.add,
+        color: onTap == null ? Colors.grey : Colors.purple,
+      ),
+    ),
+  );
 }
