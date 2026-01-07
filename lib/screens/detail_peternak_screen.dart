@@ -122,7 +122,7 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
                 children: [
                   // 1. DROPDOWN JENIS (Plus Logic Lainnya)
                   DropdownButtonFormField<String>(
-                    value: selectedJenis,
+                    initialValue: selectedJenis,
                     decoration: _inputDecor("Jenis Hewan"),
                     hint: const Text("Pilih Jenis"),
                     items: [
@@ -159,7 +159,7 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
 
                   // 2. DROPDOWN BANGSA (Plus Logic Tambah)
                   DropdownButtonFormField<String>(
-                    value: selectedBangsa,
+                    initialValue: selectedBangsa,
                     decoration: _inputDecor("Bangsa / Ras"),
                     hint: const Text("Pilih Ras"),
                     items: [
@@ -280,7 +280,7 @@ class _DetailPeternakScreenState extends State<DetailPeternakScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<String>(
-              value: _jenisList.contains(jenis) ? jenis : null,
+              initialValue: _jenisList.contains(jenis) ? jenis : null,
               hint: Text(jenis), // Fallback kalau jenis lama ga ada di list
               items: _jenisList
                   .map((e) => DropdownMenuItem(value: e, child: Text(e)))

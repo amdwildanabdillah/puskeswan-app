@@ -103,18 +103,20 @@ class _AboutScreenState extends State<AboutScreen> {
                       .eq('id', user.id);
 
                   await _getUserData();
-                  if (mounted)
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text("Profil berhasil diupdate! ✅"),
                       ),
                     );
+                  }
                 }
               } catch (e) {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(
                     context,
                   ).showSnackBar(SnackBar(content: Text("Gagal: $e")));
+                }
               } finally {
                 setState(() => _isLoading = false);
               }
@@ -183,7 +185,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 await _supabase.auth.updateUser(
                   UserAttributes(password: passController.text),
                 );
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text(
@@ -191,11 +193,13 @@ class _AboutScreenState extends State<AboutScreen> {
                       ),
                     ),
                   );
+                }
               } catch (e) {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(
                     context,
                   ).showSnackBar(SnackBar(content: Text("Gagal: $e")));
+                }
               } finally {
                 setState(() => _isLoading = false);
               }
@@ -392,7 +396,7 @@ class _AboutScreenState extends State<AboutScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            "Ahmad Wildan Abdillah - Techpreneur & Founder",
+                            "Ahmad Wildan Abdillah - Techpreneur",
                             style: GoogleFonts.poppins(
                               color: Colors.white,
                               fontSize: 12,

@@ -145,8 +145,10 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
           .eq('peternak_id', peternakId)
           .eq('status', 'Aktif')
           .order('created_at', ascending: false);
-      if (mounted)
+      if (mounted) {
         setState(() => _hewanList = List<Map<String, dynamic>>.from(data));
+      }
+      // ignore: empty_catches
     } catch (e) {}
   }
 
@@ -239,7 +241,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: selectedJenis,
+                    initialValue: selectedJenis,
                     decoration: _inputDecor("Jenis Hewan"),
                     hint: const Text("Pilih Jenis"),
                     items: [
@@ -274,7 +276,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: selectedBangsa,
+                    initialValue: selectedBangsa,
                     decoration: _inputDecor("Bangsa / Ras"),
                     hint: const Text("Pilih Ras"),
                     items: [
@@ -400,7 +402,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
 
                   // DROPDOWN KECAMATAN
                   DropdownButtonFormField<String>(
-                    value: selectedKecamatan,
+                    initialValue: selectedKecamatan,
                     decoration: _inputDecor("Kecamatan"),
                     hint: const Text("Pilih Kecamatan"),
                     items: _dataWilayah.keys
@@ -421,7 +423,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
 
                   // DROPDOWN DESA (Otomatis muncul sesuai Kecamatan)
                   DropdownButtonFormField<String>(
-                    value: selectedDesa,
+                    initialValue: selectedDesa,
                     decoration: _inputDecor("Desa / Kelurahan"),
                     hint: const Text("Pilih Desa"),
                     items: currentDesaList
@@ -578,12 +580,14 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
       final connectivity = await (Connectivity().checkConnectivity());
       if (connectivity.contains(ConnectivityResult.none)) {
         await DatabaseHelper().insertTransaksi(dataLaporan);
-        if (mounted)
+        if (mounted) {
           _showDialog("OFFLINE", "Data tersimpan di HP.", Colors.orange);
+        }
       } else {
         await _supabase.from('pelayanan').insert(dataLaporan);
-        if (mounted)
+        if (mounted) {
           _showDialog("BERHASIL", "Laporan tersimpan!", Colors.green);
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -630,8 +634,9 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isInit)
+    if (!_isInit) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -692,7 +697,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               decoration: _inputDecor("Pilih Peternak"),
-                              value: _selectedPeternakId,
+                              initialValue: _selectedPeternakId,
                               isExpanded: true,
                               items: _peternakList
                                   .map(
@@ -724,7 +729,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               decoration: _inputDecor("Pilih Hewan"),
-                              value: _selectedHewanId,
+                              initialValue: _selectedHewanId,
                               hint: const Text("Pilih Hewan..."),
                               isExpanded: true,
                               items: _hewanList
@@ -874,7 +879,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
       children: [
         DropdownButtonFormField<String>(
           decoration: _inputDecor("Diagnosa"),
-          value: null,
+          initialValue: null,
           hint: Text(
             _diagnosaController.text.isEmpty
                 ? "Pilih Diagnosa"
@@ -893,13 +898,14 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
             ),
           ],
           onChanged: (val) {
-            if (val == 'NEW')
+            if (val == 'NEW') {
               _showTextInputDialog(
                 "Diagnosa Baru",
                 (v) => setState(() => _diagnosaController.text = v),
               );
-            else
+            } else {
               setState(() => _diagnosaController.text = val!);
+            }
           },
         ),
         const SizedBox(height: 16),
@@ -915,7 +921,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
               child: DropdownButtonFormField<Map<String, dynamic>>(
                 isExpanded: true,
                 decoration: _inputDecor("Pilih Obat"),
-                value: _obatDipilih,
+                initialValue: _obatDipilih,
                 items: _obatList
                     .map(
                       (o) => DropdownMenuItem(
@@ -1003,7 +1009,7 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           decoration: _inputDecor("Jenis Hewan"),
-          value: _selectedIbJenis,
+          initialValue: _selectedIbJenis,
           items: [
             ..._ibJenisList.map(
               (e) => DropdownMenuItem(value: e, child: Text(e)),
@@ -1017,19 +1023,20 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
             ),
           ],
           onChanged: (v) {
-            if (v == 'NEW')
+            if (v == 'NEW') {
               _showTextInputDialog(
                 "Jenis Baru",
                 (val) => setState(() => _selectedIbJenis = val),
               );
-            else
+            } else {
               setState(() => _selectedIbJenis = v);
+            }
           },
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           decoration: _inputDecor("Bangsa"),
-          value: _selectedIbBangsa,
+          initialValue: _selectedIbBangsa,
           items: [
             ..._ibBangsaList.map(
               (e) => DropdownMenuItem(value: e, child: Text(e)),
@@ -1043,13 +1050,14 @@ class _InputPelayananScreenState extends State<InputPelayananScreen> {
             ),
           ],
           onChanged: (v) {
-            if (v == 'NEW')
+            if (v == 'NEW') {
               _showTextInputDialog(
                 "Bangsa Baru",
                 (val) => setState(() => _selectedIbBangsa = val),
               );
-            else
+            } else {
               setState(() => _selectedIbBangsa = v);
+            }
           },
         ),
       ],

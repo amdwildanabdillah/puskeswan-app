@@ -149,7 +149,7 @@ class _GudangScreenState extends State<GudangScreen> {
                 } catch (_) {}
 
                 await _fetchBarang();
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
@@ -157,11 +157,13 @@ class _GudangScreenState extends State<GudangScreen> {
                       ),
                     ),
                   );
+                }
               } catch (e) {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(
                     context,
                   ).showSnackBar(SnackBar(content: Text("Gagal update: $e")));
+                }
               } finally {
                 setState(() => _isLoading = false);
               }
@@ -210,7 +212,7 @@ class _GudangScreenState extends State<GudangScreen> {
 
                   // REVISI: DROPDOWN JENIS BARANG
                   DropdownButtonFormField<String>(
-                    value: selectedJenis,
+                    initialValue: selectedJenis,
                     decoration: const InputDecoration(
                       labelText: "Jenis Barang",
                     ),

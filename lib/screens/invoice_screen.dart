@@ -332,10 +332,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   );
                 }
               } catch (e) {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(
                     context,
                   ).showSnackBar(SnackBar(content: Text("Gagal update: $e")));
+                }
               }
             },
             child: const Text("Simpan"),
@@ -789,10 +790,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       String label = _selectedDateRange == null ? "Semua" : "Custom";
       await _saveAndLaunchFile(utf8.encode(csvData), "Laporan_$label.csv");
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Gagal CSV: $e")));
+      }
     }
   }
 
@@ -862,10 +864,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       );
       await _saveAndLaunchFile(await pdf.save(), "Laporan_Sangu.pdf");
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text("Gagal PDF: $e")));
+      }
     }
   }
 
